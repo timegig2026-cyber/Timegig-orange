@@ -1,0 +1,8 @@
+{
+  "name": "Empty Template",
+  "description": "A clean empty template with a bottom menu bar and a hamburger menu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
