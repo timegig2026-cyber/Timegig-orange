@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { User, Camera, Mail, Shield, Check, X, LogOut } from 'lucide-react';
+import { User, Camera, Mail, Shield, Check, X, LogOut, CheckCircle2 } from 'lucide-react';
+import { getApplications, ApplicationSubmission } from '../utils/applicationStorage';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -8,17 +9,22 @@ interface ProfileModalProps {
 
 export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const [profile, setProfile] = useState({
-    name: 'User',
-    email: localStorage.getItem('currentUserEmail') || 'timegig2026@gmail.com',
+    name: '',
+    email: localStorage.getItem('currentUserEmail') || '',
     role: 'Member',
     avatar: '',
   });
+  const [approvedApp, setApprovedApp] = useState<ApplicationSubmission | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
       try {
+        const apps = getApplications();
+        const approved = apps.find(a => a.status === 'approved' || a.popStatus === 'pop_verified');
+        setApprovedApp(approved || null);
+
         const savedSubs = localStorage.getItem('submissions');
         if (savedSubs) {
           const subs = JSON.parse(savedSubs);
@@ -128,10 +134,24 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
               <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Account Status</label>
               <div className="flex items-center justify-between mt-1 text-sm font-semibold text-white bg-slate-900/80 px-3 py-2.5 rounded-xl border border-slate-700">
                 <div className="flex items-center gap-2">
-                  <Shield size={16} className="text-emerald-400" />
-                  <span>Verified & Active GPS</span>
+                  {approvedApp ? (
+                    <CheckCircle2 size={16} className="text-emerald-400" />
+                  ) : (
+                    <Shield size={16} className="text-emerald-400" />
+                  )}
+                  <span>
+                    {approvedApp 
+                      ? (approvedApp.type === 'tenant' ? 'Fully Approved Tenant' : 'Fully Approved Subscriber')
+                      : 'Verified & Active GPS'}
+                  </span>
                 </div>
-                <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">Online</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                  approvedApp 
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' 
+                    : 'bg-emerald-500/20 text-emerald-400'
+                }`}>
+                  {approvedApp ? 'Approved' : 'Online'}
+                </span>
               </div>
             </div>
           </div>

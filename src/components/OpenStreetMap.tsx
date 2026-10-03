@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
-import { Search, Plus, Minus, MapPin, Layers } from 'lucide-react';
+import { Search, Plus, Minus, MapPin, Layers, Crosshair, ShieldCheck } from 'lucide-react';
 
 interface OpenStreetMapProps {
   onRegisterLocate?: (locateFn: () => void) => void;
+  onOpenAdmin?: () => void;
 }
 
 interface SearchResult {
@@ -13,7 +14,7 @@ interface SearchResult {
   lon: string;
 }
 
-export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) {
+export default function OpenStreetMap({ onRegisterLocate, onOpenAdmin }: OpenStreetMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
@@ -21,6 +22,7 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
   const circleRef = useRef<L.Circle | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const currentTileLayerRef = useRef<L.TileLayer | null>(null);
+  const lastCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
 
   const [mapType, setMapType] = useState<'street' | 'satellite'>(() => {
     return (localStorage.getItem('preferred_map_layer') as 'street' | 'satellite') || 'street';
@@ -127,6 +129,8 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
       circleRef.current.bringToBack();
     }
 
+    lastCoordsRef.current = { lat, lng };
+
     // Auto-center map on initial GPS fix
     if (!hasCenteredOnce) {
       map.setView([lat, lng], 16, { animate: true });
@@ -134,6 +138,38 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
       setHasCenteredOnce(true);
     }
   }, [createRefinedGpsIcon, hasCenteredOnce]);
+
+  const directToExactSpot = () => {
+    if (mapInstanceRef.current && lastCoordsRef.current) {
+      const { lat, lng } = lastCoordsRef.current;
+      mapInstanceRef.current.flyTo([lat, lng], 17, { animate: true, duration: 1.2 });
+      if (markerRef.current) {
+        markerRef.current.openPopup();
+      }
+    } else {
+      startWatchingLocation();
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            updateDeviceLocation(
+              position.coords.latitude,
+              position.coords.longitude,
+              position.coords.accuracy
+            );
+            if (mapInstanceRef.current) {
+              mapInstanceRef.current.flyTo(
+                [position.coords.latitude, position.coords.longitude],
+                17,
+                { animate: true, duration: 1.2 }
+              );
+            }
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+      }
+    }
+  };
 
   const startWatchingLocation = useCallback(() => {
     if ('geolocation' in navigator) {
@@ -354,14 +390,15 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search home number, street address, location, province..."
-            className="w-full bg-slate-900/95 backdrop-blur-xl border border-orange-500/40 text-white placeholder-slate-400 text-sm font-semibold pl-11 pr-24 py-3 rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.7)] focus:outline-none focus:border-orange-500 transition-all"
+            className="w-full bg-slate-900/95 backdrop-blur-xl border border-orange-500/40 text-white placeholder-slate-400 text-sm font-semibold pl-11 pr-14 py-3 rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.7)] focus:outline-none focus:border-orange-500 transition-all"
           />
           <button
             type="submit"
             disabled={isSearching}
-            className="absolute right-2 bg-gradient-to-r from-orange-600 to-amber-600 text-white px-4 py-2 rounded-xl text-xs font-extrabold shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
+            className="absolute right-2 bg-gradient-to-r from-orange-600 to-amber-600 text-white p-2.5 rounded-xl shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center justify-center"
+            title="Search location"
           >
-            {isSearching ? 'Searching...' : 'Search'}
+            <Search size={16} />
           </button>
         </form>
 
@@ -382,31 +419,48 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
         )}
       </div>
 
-      {/* Floating Satellite / Street View Layer Switcher Button */}
-      <div className="fixed top-20 right-4 z-[1500] pointer-events-auto">
+      {/* Floating Action Icons on Map Right Side (Icons Only) */}
+      <div className="fixed top-20 right-4 z-[1500] flex flex-col gap-2.5 pointer-events-auto">
+        {/* 1. Satellite / Street View Layer Switcher Icon */}
         <button
           onClick={() => switchMapType(mapType === 'street' ? 'satellite' : 'street')}
-          className="flex items-center gap-2 bg-slate-900/95 hover:bg-slate-800 text-white border border-orange-500/40 px-3.5 py-2.5 rounded-2xl shadow-[0_8px_25px_rgba(0,0,0,0.75)] backdrop-blur-md text-xs font-extrabold transition-all hover:scale-105 active:scale-95 cursor-pointer group"
+          className="w-11 h-11 bg-slate-900/95 hover:bg-slate-800 text-white border border-orange-500/40 rounded-2xl shadow-[0_8px_25px_rgba(0,0,0,0.75)] backdrop-blur-md flex items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer group"
           title={`Switch to ${mapType === 'street' ? 'Satellite View' : 'Street View'}`}
         >
-          <Layers size={17} className="text-orange-400 group-hover:rotate-180 transition-transform duration-300" />
-          <span>{mapType === 'street' ? 'Satellite' : 'Street Map'}</span>
+          <Layers size={18} className="text-orange-400 group-hover:rotate-180 transition-transform duration-300" />
+        </button>
+
+        {/* 2. Direct to Exact Spot Icon */}
+        <button
+          onClick={directToExactSpot}
+          className="w-11 h-11 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white border border-orange-400/40 rounded-2xl shadow-[0_8px_25px_rgba(249,115,22,0.6)] backdrop-blur-md flex items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer group"
+          title="Direct to exact spot"
+        >
+          <Crosshair size={18} className="text-white group-hover:rotate-90 transition-transform duration-300" />
+        </button>
+
+        {/* 3. Admin Icon */}
+        <button
+          onClick={onOpenAdmin}
+          className="w-11 h-11 bg-slate-900/95 hover:bg-slate-800 text-white border border-orange-500/40 rounded-2xl shadow-[0_8px_25px_rgba(0,0,0,0.75)] backdrop-blur-md flex items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer group"
+          title="Open Admin Portal"
+        >
+          <ShieldCheck size={18} className="text-orange-400 group-hover:scale-110 transition-transform duration-300" />
         </button>
       </div>
 
-      {/* Zoom Controls at Bottom Center Corner (Positioned cleanly above bottom nav bar) */}
-      <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[1500] flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border border-orange-500/30 px-4 py-2 rounded-2xl shadow-[0_8px_25px_rgba(0,0,0,0.7)] pointer-events-auto">
+      {/* Zoom Controls at Bottom Center Corner (Icons Only) */}
+      <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[1500] flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-xl border border-orange-500/30 p-1.5 rounded-2xl shadow-[0_8px_25px_rgba(0,0,0,0.7)] pointer-events-auto">
         <button
           onClick={handleZoomIn}
-          className="p-2 text-white bg-slate-800 hover:bg-orange-600 rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center"
+          className="p-2.5 text-white bg-slate-800 hover:bg-orange-600 rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center"
           title="Zoom In"
         >
           <Plus size={18} />
         </button>
-        <span className="text-xs font-bold text-slate-300 tracking-wider">ZOOM</span>
         <button
           onClick={handleZoomOut}
-          className="p-2 text-white bg-slate-800 hover:bg-orange-600 rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center"
+          className="p-2.5 text-white bg-slate-800 hover:bg-orange-600 rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center"
           title="Zoom Out"
         >
           <Minus size={18} />
