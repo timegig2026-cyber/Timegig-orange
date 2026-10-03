@@ -44,26 +44,27 @@ export default function OpenStreetMap() {
           const accuracy = position.coords.accuracy;
 
           if (mapInstanceRef.current) {
-            // Custom "My Location" marker icon
-            const myLocationIcon = L.divIcon({
-              className: 'custom-my-location-marker',
+            // Custom pinpoint map pin icon
+            const pinpointIcon = L.divIcon({
+              className: 'custom-pinpoint-marker',
               html: `
-                <div class="relative flex items-center justify-center w-10 h-10">
-                  <span class="absolute animate-ping inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
-                  <div class="relative inline-flex items-center justify-center w-8 h-8 bg-gradient-to-r from-orange-600 to-amber-600 rounded-full border-2 border-white shadow-[0_4px_16px_rgba(249,115,22,0.9)] text-white font-black">
-                    <svg class="w-4 h-4 filter drop-shadow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                <div class="relative flex flex-col items-center justify-center -translate-x-1/2 -translate-y-full">
+                  <div class="absolute -bottom-1 w-3 h-3 bg-orange-600 rotate-45 rounded-sm shadow-md"></div>
+                  <div class="relative flex items-center justify-center w-10 h-10 bg-gradient-to-r from-orange-600 to-amber-600 rounded-full border-2 border-white shadow-[0_6px_20px_rgba(249,115,22,0.9)] text-white">
+                    <svg class="w-5 h-5 filter drop-shadow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                   </div>
+                  <span class="absolute top-0 animate-ping inline-flex h-10 w-10 rounded-full bg-orange-500 opacity-60 pointer-events-none"></span>
                 </div>
               `,
-              iconSize: [40, 40],
-              iconAnchor: [20, 20],
+              iconSize: [0, 0],
+              iconAnchor: [0, 0],
             });
 
             if (markerRef.current) {
               markerRef.current.setLatLng([lat, lng]);
             } else {
-              markerRef.current = L.marker([lat, lng], { icon: myLocationIcon }).addTo(mapInstanceRef.current);
-              markerRef.current.bindPopup('<div style="font-family:sans-serif;font-weight:bold;color:#c2410c;">My Exact GPS Location</div>');
+              markerRef.current = L.marker([lat, lng], { icon: pinpointIcon }).addTo(mapInstanceRef.current);
+              markerRef.current.bindPopup('<div style="font-family:sans-serif;font-weight:bold;color:#c2410c;padding:4px;">📍 My Exact Pinpointed Location</div>');
             }
 
             if (circleRef.current) {
@@ -79,9 +80,10 @@ export default function OpenStreetMap() {
               }).addTo(mapInstanceRef.current);
             }
 
-            // Automatically center map on the user's exact GPS location after successful response
+            // Automatically center map on the user's exact GPS location and open popup
             if (!hasCenteredOnce) {
               mapInstanceRef.current.setView([lat, lng], 16, { animate: true });
+              markerRef.current.openPopup();
               setHasCenteredOnce(true);
             }
           }
