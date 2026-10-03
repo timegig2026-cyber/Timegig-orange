@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
-import { Search, Plus, Minus, MapPin, AlertTriangle } from 'lucide-react';
+import { Search, Plus, Minus, MapPin, Layers } from 'lucide-react';
 
 interface OpenStreetMapProps {
   onRegisterLocate?: (locateFn: () => void) => void;
@@ -20,12 +20,15 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
   const searchMarkerRef = useRef<L.Marker | null>(null);
   const circleRef = useRef<L.Circle | null>(null);
   const watchIdRef = useRef<number | null>(null);
+  const currentTileLayerRef = useRef<L.TileLayer | null>(null);
 
+  const [mapType, setMapType] = useState<'street' | 'satellite'>(() => {
+    return (localStorage.getItem('preferred_map_layer') as 'street' | 'satellite') || 'street';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasCenteredOnce, setHasCenteredOnce] = useState(false);
-  const [locationError, setLocationError] = useState<string | null>(null);
 
   const getProfileLogo = () => {
     try {
@@ -130,8 +133,6 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
       markerRef.current.openPopup();
       setHasCenteredOnce(true);
     }
-
-    setLocationError(null);
   }, [createRefinedGpsIcon, hasCenteredOnce]);
 
   const startWatchingLocation = useCallback(() => {
@@ -151,15 +152,6 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
         },
         (error) => {
           console.warn('Geolocation watchPosition error:', error.code, error.message);
-          if (error.code === error.PERMISSION_DENIED) {
-            setLocationError('Location permission denied. Please enable location access in your browser settings.');
-          } else if (error.code === error.POSITION_UNAVAILABLE) {
-            setLocationError('Location information is unavailable.');
-          } else if (error.code === error.TIMEOUT) {
-            setLocationError('Location request timed out.');
-          } else {
-            setLocationError('Unable to retrieve exact GPS location.');
-          }
         },
         {
           enableHighAccuracy: true,
@@ -168,7 +160,7 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
         }
       );
     } else {
-      setLocationError('Geolocation is not supported by your browser.');
+      console.warn('Geolocation is not supported by your browser.');
     }
   }, [updateDeviceLocation]);
 
@@ -177,6 +169,40 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
       onRegisterLocate(startWatchingLocation);
     }
   }, [onRegisterLocate, startWatchingLocation]);
+
+  // Map Tile Layer Switcher
+  const switchMapType = (newType: 'street' | 'satellite') => {
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+
+    if (currentTileLayerRef.current) {
+      map.removeLayer(currentTileLayerRef.current);
+    }
+
+    let newTileLayer: L.TileLayer;
+    if (newType === 'satellite') {
+      newTileLayer = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        {
+          maxZoom: 19,
+          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+        }
+      );
+    } else {
+      newTileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      });
+    }
+
+    newTileLayer.addTo(map);
+    newTileLayer.bringToBack();
+    currentTileLayerRef.current = newTileLayer;
+    setMapType(newType);
+    try {
+      localStorage.setItem('preferred_map_layer', newType);
+    } catch (e) {}
+  };
 
   // Handle Search using OpenStreetMap Nominatim
   const handleSearch = async (e?: React.FormEvent) => {
@@ -256,10 +282,21 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
       worldCopyJump: true,
     });
 
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-    }).addTo(map);
+    const initialLayer = mapType === 'satellite'
+      ? L.tileLayer(
+          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          {
+            maxZoom: 19,
+            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+          }
+        )
+      : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        });
+
+    initialLayer.addTo(map);
+    currentTileLayerRef.current = initialLayer;
 
     mapInstanceRef.current = map;
 
@@ -293,33 +330,18 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
         searchMarkerRef.current.remove();
         searchMarkerRef.current = null;
       }
+      if (currentTileLayerRef.current) {
+        currentTileLayerRef.current.remove();
+        currentTileLayerRef.current = null;
+      }
       map.remove();
       mapInstanceRef.current = null;
     };
-  }, [startWatchingLocation]);
+  }, [mapType, startWatchingLocation]);
 
   return (
     <div className="absolute inset-0 w-full h-full overflow-hidden bg-slate-900">
       <div ref={mapContainerRef} className="w-full h-full" />
-
-      {/* Location Error Box if permission denied or unavailable */}
-      {locationError && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[500] w-[90%] max-w-md bg-red-950/95 border border-red-500/80 text-red-200 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md flex items-start gap-3">
-          <AlertTriangle size={20} className="text-red-400 shrink-0 mt-0.5" />
-          <div className="flex-1 text-xs font-semibold leading-relaxed">
-            {locationError}
-          </div>
-          <button
-            onClick={() => {
-              setLocationError(null);
-              startWatchingLocation();
-            }}
-            className="text-[10px] font-extrabold uppercase bg-red-600 hover:bg-red-500 text-white px-2.5 py-1.5 rounded-xl transition-colors cursor-pointer shrink-0"
-          >
-            Retry
-          </button>
-        </div>
-      )}
 
       {/* Floating Top Search Bar */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[400] w-[92%] max-w-lg">
@@ -358,6 +380,18 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
             ))}
           </div>
         )}
+      </div>
+
+      {/* Floating Satellite / Street View Layer Switcher Button */}
+      <div className="absolute top-20 right-4 z-[400]">
+        <button
+          onClick={() => switchMapType(mapType === 'street' ? 'satellite' : 'street')}
+          className="flex items-center gap-2 bg-slate-900/95 hover:bg-slate-800 text-white border border-orange-500/40 px-3.5 py-2.5 rounded-2xl shadow-[0_8px_25px_rgba(0,0,0,0.75)] backdrop-blur-md text-xs font-extrabold transition-all hover:scale-105 active:scale-95 cursor-pointer group"
+          title={`Switch to ${mapType === 'street' ? 'Satellite View' : 'Street View'}`}
+        >
+          <Layers size={17} className="text-orange-400 group-hover:rotate-180 transition-transform duration-300" />
+          <span>{mapType === 'street' ? 'Satellite' : 'Street Map'}</span>
+        </button>
       </div>
 
       {/* Zoom Controls at Bottom Center Corner */}
