@@ -9,7 +9,7 @@ export default function App() {
   const locateRef = useRef<(() => void) | null>(null);
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans pb-16">
+    <div className="relative w-full h-[100dvh] overflow-hidden bg-slate-950 font-sans">
       <OpenStreetMap onRegisterLocate={(fn) => { locateRef.current = fn; }} />
 
       <BottomNavBar

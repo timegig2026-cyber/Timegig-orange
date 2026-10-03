@@ -343,8 +343,8 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
     <div className="absolute inset-0 w-full h-full overflow-hidden bg-slate-900">
       <div ref={mapContainerRef} className="w-full h-full" />
 
-      {/* Floating Top Search Bar */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[400] w-[92%] max-w-lg">
+      {/* Floating Top Search Bar - fixed with high z-index so it never hides behind map layers */}
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[1500] w-[92%] max-w-lg pointer-events-auto">
         <form onSubmit={handleSearch} className="relative flex items-center">
           <div className="absolute left-3.5 text-orange-400">
             <Search size={18} />
@@ -367,7 +367,7 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
 
         {/* Search Results Dropdown */}
         {searchResults.length > 0 && (
-          <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900/95 backdrop-blur-xl border border-orange-500/30 rounded-2xl shadow-2xl max-h-60 overflow-y-auto z-[410] divide-y divide-slate-800">
+          <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900/95 backdrop-blur-xl border border-orange-500/30 rounded-2xl shadow-2xl max-h-60 overflow-y-auto z-[1600] divide-y divide-slate-800">
             {searchResults.map((result) => (
               <div
                 key={result.place_id}
@@ -383,7 +383,7 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
       </div>
 
       {/* Floating Satellite / Street View Layer Switcher Button */}
-      <div className="absolute top-20 right-4 z-[400]">
+      <div className="fixed top-20 right-4 z-[1500] pointer-events-auto">
         <button
           onClick={() => switchMapType(mapType === 'street' ? 'satellite' : 'street')}
           className="flex items-center gap-2 bg-slate-900/95 hover:bg-slate-800 text-white border border-orange-500/40 px-3.5 py-2.5 rounded-2xl shadow-[0_8px_25px_rgba(0,0,0,0.75)] backdrop-blur-md text-xs font-extrabold transition-all hover:scale-105 active:scale-95 cursor-pointer group"
@@ -394,8 +394,8 @@ export default function OpenStreetMap({ onRegisterLocate }: OpenStreetMapProps) 
         </button>
       </div>
 
-      {/* Zoom Controls at Bottom Center Corner */}
-      <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-[400] flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border border-orange-500/30 px-4 py-2 rounded-2xl shadow-[0_8px_25px_rgba(0,0,0,0.7)]">
+      {/* Zoom Controls at Bottom Center Corner (Positioned cleanly above bottom nav bar) */}
+      <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[1500] flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border border-orange-500/30 px-4 py-2 rounded-2xl shadow-[0_8px_25px_rgba(0,0,0,0.7)] pointer-events-auto">
         <button
           onClick={handleZoomIn}
           className="p-2 text-white bg-slate-800 hover:bg-orange-600 rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center"

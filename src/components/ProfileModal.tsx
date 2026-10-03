@@ -63,7 +63,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
       <div className="relative w-full max-w-md bg-slate-900 border border-orange-500/30 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden text-white">
         
         {/* Header */}
