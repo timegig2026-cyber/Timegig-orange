@@ -30,7 +30,6 @@ export default function OpenStreetMap() {
       const map = mapInstanceRef.current;
       const profileLogo = getProfileLogo();
 
-      // Custom pinpoint marker with user profile logo
       const pinpointIcon = L.divIcon({
         className: 'custom-profile-pinpoint-marker',
         html: `
@@ -86,13 +85,14 @@ export default function OpenStreetMap() {
         (error) => {
           console.warn('Geolocation error:', error.code, error.message);
           setIsLocating(false);
-          alert('Unable to retrieve exact location. Please check browser location permissions.');
+          // Fallback to default if GPS fails
+          updateDeviceLocation(40.7128, -74.0060, 500);
         },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     } else {
       setIsLocating(false);
-      alert('Geolocation is not supported by your browser.');
+      updateDeviceLocation(40.7128, -74.0060, 500);
     }
   };
 
@@ -100,10 +100,9 @@ export default function OpenStreetMap() {
     if (!mapContainerRef.current) return;
     if (mapInstanceRef.current) return;
 
-    // Initialize Leaflet map with OpenStreetMap free tile layer
     const map = L.map(mapContainerRef.current, {
-      center: [-26.2041, 28.0473],
-      zoom: 3,
+      center: [40.7128, -74.0060],
+      zoom: 13,
       minZoom: 2,
       maxZoom: 19,
       zoomControl: false,
@@ -111,28 +110,16 @@ export default function OpenStreetMap() {
       worldCopyJump: true,
     });
 
-    // Add OpenStreetMap standard free tile server (No costs / no API keys required)
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     }).addTo(map);
 
-    // Zoom control in top-left
     L.control.zoom({ position: 'topleft' }).addTo(map);
 
     mapInstanceRef.current = map;
 
-    // 1. IP Geolocation instant fallback
-    fetch('https://ipapi.co/json/')
-      .then(res => res.json())
-      .then(data => {
-        if (data && data.latitude && data.longitude && !hasCenteredOnce) {
-          updateDeviceLocation(data.latitude, data.longitude, 1000);
-        }
-      })
-      .catch(() => {});
-
-    // 2. Browser GPS Geolocation attempt
+    // Try GPS immediately
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -140,15 +127,32 @@ export default function OpenStreetMap() {
         },
         (error) => {
           console.warn('Initial geolocation error:', error.code, error.message);
+          // Try IP fallback
+          fetch('https://ipapi.co/json/')
+            .then(res => res.json())
+            .then(data => {
+              if (data && data.latitude && data.longitude && !hasCenteredOnce) {
+                updateDeviceLocation(data.latitude, data.longitude, 1000);
+              }
+            })
+            .catch(() => {});
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
       );
+    } else {
+      fetch('https://ipapi.co/json/')
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.latitude && data.longitude && !hasCenteredOnce) {
+            updateDeviceLocation(data.latitude, data.longitude, 1000);
+          }
+        })
+        .catch(() => {});
     }
 
-    // Invalidate size to ensure map tiles fill the container completely
     const timer = setTimeout(() => {
       map.invalidateSize();
-    }, 150);
+    }, 100);
 
     const handleResize = () => {
       map.invalidateSize();
@@ -161,7 +165,7 @@ export default function OpenStreetMap() {
       map.remove();
       mapInstanceRef.current = null;
     };
-  }, [hasCenteredOnce]);
+  }, []);
 
   return (
     <div className="absolute inset-0 w-full h-full overflow-hidden bg-slate-900">
