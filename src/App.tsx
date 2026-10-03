@@ -25,13 +25,27 @@ import {
   LogOut, 
   Upload, 
   ShieldCheck,
-  Award
+  Award,
+  KeyRound,
+  Mail,
+  FileCheck,
+  ChevronRight,
+  ShieldAlert,
+  ArrowRight,
+  UserCheck
 } from 'lucide-react';
 import OpenStreetMap from './components/OpenStreetMap';
 import { RealisticSeekersIcon, RealisticGigsIcon, RealisticTenantIcon } from './components/RealisticIcons';
 
 type SubscriptionType = 'tenant' | 'user' | null;
 type Submission = { id: string; type: SubscriptionType; status: 'pending' | 'approved' | 'rejected'; files: { face?: string; idDoc?: string; pop?: string } };
+
+interface UserAccount {
+  email: string;
+  password?: string;
+  termsAccepted: boolean;
+  registeredAt: string;
+}
 
 interface ProfileData {
   name: string;
@@ -61,7 +75,39 @@ const defaultProfile: ProfileData = {
 
 type ViewMode = 'seekers' | 'gigs' | 'activation' | 'profile' | 'tenant-portal';
 
+const ADMIN_EMAIL = 'timegig2026@gmail.com';
+
 export default function App() {
+  // --- Auth & Session State ---
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
+    const saved = localStorage.getItem('currentUser');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const [registeredUsers, setRegisteredUsers] = useState<UserAccount[]>(() => {
+    const saved = localStorage.getItem('registeredUsers');
+    if (saved) return JSON.parse(saved);
+    // Seed default admin account
+    return [
+      {
+        email: ADMIN_EMAIL,
+        password: 'password123',
+        termsAccepted: true,
+        registeredAt: new Date().toISOString()
+      }
+    ];
+  });
+
+  // Auth Form State
+  const [authMode, setAuthMode] = useState<'register' | 'login'>('register');
+  const [authStep, setAuthStep] = useState<'credentials' | 'terms'>('credentials');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
+  const [authTermsAccepted, setAuthTermsAccepted] = useState(false);
+  const [authError, setAuthError] = useState('');
+
+  // --- App View State ---
   const [view, setView] = useState<ViewMode>('seekers');
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -117,7 +163,20 @@ export default function App() {
 
   const [newSocial, setNewSocial] = useState('');
 
-  // Save state to localStorage
+  // Save auth state
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('currentUser');
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
+  }, [registeredUsers]);
+
+  // Save app state to localStorage
   useEffect(() => {
     localStorage.setItem('submissions', JSON.stringify(submissions));
   }, [submissions]);
@@ -141,6 +200,115 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('userSubPrice', String(userSubPrice));
   }, [userSubPrice]);
+
+  // Admin access check: Only timegig2026@gmail.com has admin access
+  const isAdminUser = currentUser?.email?.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
+  const handleNextToTerms = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    if (!authEmail.trim() || !authPassword) {
+      setAuthError('Please enter both email and password.');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(authEmail.trim())) {
+      setAuthError('Please enter a valid email address.');
+      return;
+    }
+    if (authPassword.length < 6) {
+      setAuthError('Password must be at least 6 characters long.');
+      return;
+    }
+    if (authPassword !== authConfirmPassword) {
+      setAuthError('Passwords do not match.');
+      return;
+    }
+    // Proceed to Step 2: Terms and Conditions
+    setAuthStep('terms');
+  };
+
+  const handleCompleteRegistration = () => {
+    if (!authTermsAccepted) {
+      setAuthError('You must accept the Terms and Conditions to proceed.');
+      return;
+    }
+    const normalizedEmail = authEmail.trim().toLowerCase();
+    const existing = registeredUsers.find(u => u.email.toLowerCase() === normalizedEmail);
+    if (existing) {
+      setAuthError('An account with this email already exists. Please log in.');
+      setAuthMode('login');
+      setAuthStep('credentials');
+      return;
+    }
+
+    const newUser: UserAccount = {
+      email: normalizedEmail,
+      password: authPassword,
+      termsAccepted: true,
+      registeredAt: new Date().toISOString()
+    };
+
+    setRegisteredUsers(prev => [...prev, newUser]);
+    setCurrentUser(newUser);
+
+    // Update profile email if empty
+    setProfile(prev => ({
+      ...prev,
+      email: prev.email || normalizedEmail
+    }));
+
+    // Reset auth inputs
+    setAuthEmail('');
+    setAuthPassword('');
+    setAuthConfirmPassword('');
+    setAuthTermsAccepted(false);
+    setAuthStep('credentials');
+    setAuthError('');
+  };
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    const normalizedEmail = authEmail.trim().toLowerCase();
+    if (!normalizedEmail || !authPassword) {
+      setAuthError('Please enter both email and password.');
+      return;
+    }
+
+    const user = registeredUsers.find(u => u.email.toLowerCase() === normalizedEmail);
+    if (!user) {
+      // If logging in as admin timegig2026@gmail.com for the first time
+      if (normalizedEmail === ADMIN_EMAIL.toLowerCase()) {
+        const adminUser: UserAccount = {
+          email: ADMIN_EMAIL,
+          password: authPassword,
+          termsAccepted: true,
+          registeredAt: new Date().toISOString()
+        };
+        setRegisteredUsers(prev => [...prev, adminUser]);
+        setCurrentUser(adminUser);
+        setProfile(prev => ({ ...prev, email: prev.email || ADMIN_EMAIL }));
+        setAuthEmail('');
+        setAuthPassword('');
+        setAuthError('');
+        return;
+      }
+      setAuthError('Account not found. Please check your email or register first.');
+      return;
+    }
+
+    if (user.password && user.password !== authPassword) {
+      setAuthError('Incorrect password. Please try again.');
+      return;
+    }
+
+    setCurrentUser(user);
+    setProfile(prev => ({ ...prev, email: prev.email || user.email }));
+    setAuthEmail('');
+    setAuthPassword('');
+    setAuthError('');
+  };
 
   const generateLink = () => setShareLink(`${window.location.origin}/activate?ref=${Math.random().toString(36).substring(7)}`);
 
@@ -193,13 +361,13 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    if (confirm("Are you sure you want to log out? This will reset your current session.")) {
-      localStorage.clear();
-      setSubmissions([]);
-      setProfile(defaultProfile);
-      setIsProfileLocked(false);
+    if (confirm("Are you sure you want to log out?")) {
+      setCurrentUser(null);
       setView('seekers');
       setIsMenuOpen(false);
+      setIsAdminOpen(false);
+      setAuthMode('register');
+      setAuthStep('credentials');
     }
   };
 
@@ -248,13 +416,272 @@ export default function App() {
   const userProfitBalance = approvedUsersCount * tenantUserPrice;
   const netProfit = userProfitBalance - tenantSubPrice;
 
+  // --- AUTHENTICATION & REGISTRATION SCREEN ---
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-950 via-slate-900 to-black text-white font-sans flex flex-col justify-center items-center p-4 relative overflow-hidden">
+        {/* Ambient Glows */}
+        <div className="absolute -top-32 -left-32 w-80 h-80 bg-orange-600/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-amber-600/20 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="w-full max-w-md bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 sm:p-8 shadow-[0_20px_50px_rgba(0,0,0,0.6)] relative z-10 animate-in fade-in zoom-in-95 duration-300">
+          {/* Header */}
+          <div className="text-center space-y-2 mb-6">
+            <div className="inline-flex p-3 bg-gradient-to-b from-orange-500 to-orange-700 rounded-2xl shadow-[0_8px_20px_rgba(234,88,12,0.4)] border border-orange-400/40">
+              <Briefcase className="w-8 h-8 text-white drop-shadow" />
+            </div>
+            <h1 className="text-2xl font-black tracking-tight text-white">
+              Job Opportunities & GiGs
+            </h1>
+            <p className="text-xs text-orange-200/80 font-medium">
+              {authMode === 'register' 
+                ? (authStep === 'credentials' ? 'Step 1 of 2: Create Account with Email & Password' : 'Step 2 of 2: Review & Accept Terms')
+                : 'Welcome Back! Sign in to your account'}
+            </p>
+          </div>
+
+          {/* Mode Switch Tabs */}
+          <div className="flex bg-black/40 p-1 rounded-2xl border border-white/10 mb-6">
+            <button
+              onClick={() => { setAuthMode('register'); setAuthStep('credentials'); setAuthError(''); }}
+              className={`flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${authMode === 'register' ? 'bg-gradient-to-r from-orange-500 to-orange-700 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+            >
+              Register
+            </button>
+            <button
+              onClick={() => { setAuthMode('login'); setAuthStep('credentials'); setAuthError(''); }}
+              className={`flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${authMode === 'login' ? 'bg-gradient-to-r from-orange-500 to-orange-700 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+            >
+              Log In
+            </button>
+          </div>
+
+          {/* Error Message */}
+          {authError && (
+            <div className="mb-4 p-3 bg-red-500/20 border border-red-500/40 rounded-xl text-red-200 text-xs flex items-center gap-2 animate-in shake duration-200">
+              <ShieldAlert size={16} className="shrink-0 text-red-400" />
+              <span>{authError}</span>
+            </div>
+          )}
+
+          {/* REGISTRATION FLOW */}
+          {authMode === 'register' && (
+            <>
+              {authStep === 'credentials' ? (
+                <form onSubmit={handleNextToTerms} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-orange-200">
+                      Email Address
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3 text-orange-400 w-4 h-4" />
+                      <input
+                        type="email"
+                        required
+                        placeholder="yourname@example.com"
+                        value={authEmail}
+                        onChange={(e) => setAuthEmail(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2.5 bg-black/30 border border-white/20 rounded-xl text-white placeholder-slate-400 text-xs font-medium focus:outline-none focus:border-orange-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-orange-200">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <KeyRound className="absolute left-3 top-3 text-orange-400 w-4 h-4" />
+                      <input
+                        type="password"
+                        required
+                        placeholder="Create strong password (min 6 chars)"
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2.5 bg-black/30 border border-white/20 rounded-xl text-white placeholder-slate-400 text-xs font-medium focus:outline-none focus:border-orange-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-orange-200">
+                      Confirm Password
+                    </label>
+                    <div className="relative">
+                      <KeyRound className="absolute left-3 top-3 text-orange-400 w-4 h-4" />
+                      <input
+                        type="password"
+                        required
+                        placeholder="Repeat your password"
+                        value={authConfirmPassword}
+                        onChange={(e) => setAuthConfirmPassword(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2.5 bg-black/30 border border-white/20 rounded-xl text-white placeholder-slate-400 text-xs font-medium focus:outline-none focus:border-orange-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3 bg-gradient-to-r from-orange-500 to-orange-700 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-[0_6px_20px_rgba(234,88,12,0.4)] hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mt-2"
+                  >
+                    <span>Next: Terms & Conditions</span>
+                    <ArrowRight size={14} />
+                  </button>
+                </form>
+              ) : (
+                /* STEP 2: TERMS AND CONDITIONS SCREEN */
+                <div className="space-y-4 animate-in fade-in slide-in-from-right duration-200">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                    <div className="flex items-center gap-1.5 text-orange-400 text-xs font-bold">
+                      <FileCheck size={16} />
+                      <span>Terms & Conditions Agreement</span>
+                    </div>
+                    <button
+                      onClick={() => setAuthStep('credentials')}
+                      className="text-[10px] text-slate-400 hover:text-white underline"
+                    >
+                      Back to Credentials
+                    </button>
+                  </div>
+
+                  {/* Scrollable Terms Text Box */}
+                  <div className="h-44 overflow-y-auto p-3 bg-black/40 border border-white/10 rounded-xl text-[11px] text-slate-300 space-y-2.5 pr-2 leading-relaxed scrollbar-thin">
+                    <p className="font-bold text-white text-xs">1. Opportunity & Membership Agreement</p>
+                    <p>By registering on the Job Opportunities & GiGs platform, you confirm that all information provided during registration and document verification is accurate and truthfully represents your identity.</p>
+                    
+                    <p className="font-bold text-white text-xs">2. Role & Admin Permissions</p>
+                    <p>Standard users may access Seekers listings, GiGs mapping, and choose 1 subscription pass. Only the designated administrative account (<strong className="text-orange-300">timegig2026@gmail.com</strong>) has access to administrative controls, pricing management, and verification approvals.</p>
+
+                    <p className="font-bold text-white text-xs">3. Identity Verification & Privacy</p>
+                    <p>Uploaded documents (ID cards, Headshots, Proof of Payments) are strictly utilized for candidate and tenant verification compliance. Data is handled securely in accordance with recruitment regulations.</p>
+
+                    <p className="font-bold text-white text-xs">4. Fair Use & Subscription Locking</p>
+                    <p>Each user account may lock 1 approved subscription tier at a time. Agency tenants agree to legitimate recruitment and fair compensation practices.</p>
+                  </div>
+
+                  {/* Acceptance Checkbox */}
+                  <label className="flex items-start gap-2.5 p-3 bg-white/5 border border-white/15 rounded-xl cursor-pointer hover:bg-white/10 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={authTermsAccepted}
+                      onChange={(e) => setAuthTermsAccepted(e.target.checked)}
+                      className="mt-0.5 rounded border-orange-400 text-orange-600 focus:ring-orange-500 w-4 h-4 cursor-pointer accent-orange-600"
+                    />
+                    <span className="text-xs font-medium text-slate-200">
+                      I have read, understood, and accept the <strong className="text-orange-300">Terms & Conditions</strong> and Privacy Policy.
+                    </span>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={handleCompleteRegistration}
+                    disabled={!authTermsAccepted}
+                    className={`w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg transition-all flex items-center justify-center gap-2 ${authTermsAccepted ? 'bg-gradient-to-r from-emerald-500 to-emerald-700 text-white shadow-emerald-900/40 hover:brightness-110 active:scale-[0.98]' : 'bg-slate-700 text-slate-400 cursor-not-allowed'}`}
+                  >
+                    <UserCheck size={16} />
+                    <span>Accept & Complete Registration</span>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* LOGIN FLOW */}
+          {authMode === 'login' && (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-orange-200">
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-3 text-orange-400 w-4 h-4" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="yourname@example.com"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 bg-black/30 border border-white/20 rounded-xl text-white placeholder-slate-400 text-xs font-medium focus:outline-none focus:border-orange-500 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-orange-200">
+                  Password
+                </label>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-3 text-orange-400 w-4 h-4" />
+                  <input
+                    type="password"
+                    required
+                    placeholder="Enter your password"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 bg-black/30 border border-white/20 rounded-xl text-white placeholder-slate-400 text-xs font-medium focus:outline-none focus:border-orange-500 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-gradient-to-r from-orange-500 to-orange-700 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-[0_6px_20px_rgba(234,88,12,0.4)] hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mt-2"
+              >
+                <span>Log In</span>
+                <ChevronRight size={14} />
+              </button>
+
+              {/* Quick Admin Demo Fill Hint */}
+              <div className="pt-2 border-t border-white/10 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthEmail(ADMIN_EMAIL);
+                    setAuthPassword('password123');
+                  }}
+                  className="text-[10px] text-orange-300/80 hover:text-orange-200 hover:underline inline-flex items-center gap-1 font-mono"
+                >
+                  <ShieldCheck size={12} /> Auto-fill Admin ({ADMIN_EMAIL})
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // --- ADMIN PANEL (RESTRICTED ONLY TO timegig2026@gmail.com) ---
   if (isAdminOpen) {
+    if (!isAdminUser) {
+      return (
+        <div className="min-h-screen bg-orange-50 text-slate-900 font-sans flex flex-col items-center justify-center p-6 text-center space-y-4">
+          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center shadow-md">
+            <ShieldAlert size={32} />
+          </div>
+          <h2 className="text-xl font-black text-slate-900">Access Restricted</h2>
+          <p className="text-xs text-slate-600 max-w-sm">
+            Only the administrator account (<strong>{ADMIN_EMAIL}</strong>) has access to the Admin Portal.
+          </p>
+          <button 
+            onClick={() => setIsAdminOpen(false)}
+            className="bg-orange-600 text-white px-5 py-2 rounded-full font-bold text-xs uppercase tracking-wider shadow-md hover:bg-orange-700"
+          >
+            Return to App
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-orange-50 text-slate-900 font-sans flex flex-col">
         <header className="p-3 border-b border-orange-200 bg-white flex justify-between items-center shadow-md">
           <div className="flex items-center gap-2 text-orange-600 font-bold text-sm">
             <LayoutDashboard size={18} />
             <span>Job Opportunities Portal Dashboard</span>
+            <span className="bg-orange-100 text-orange-800 text-[9px] font-black px-2 py-0.5 rounded-full border border-orange-300">
+              Admin: {ADMIN_EMAIL}
+            </span>
           </div>
           <button onClick={() => setIsAdminOpen(false)} className="text-xs font-bold text-orange-800 bg-orange-100 px-2.5 py-1 rounded-full shadow-sm hover:bg-orange-200">Close Admin</button>
         </header>
@@ -341,7 +768,12 @@ export default function App() {
 
         {/* Dropdown Menu */}
         {isMenuOpen && (
-          <div className="absolute right-0 mt-2 w-48 bg-white border-2 border-orange-200 rounded-2xl shadow-[0_12px_32px_rgba(0,0,0,0.18)] z-50 py-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="absolute right-0 mt-2 w-52 bg-white border-2 border-orange-200 rounded-2xl shadow-[0_12px_32px_rgba(0,0,0,0.18)] z-50 py-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
+            {/* Logged in Email Indicator */}
+            <div className="px-3 py-1.5 border-b border-orange-100 text-[10px] text-slate-400 truncate">
+              Signed in as <span className="font-bold text-orange-900 block truncate">{currentUser?.email}</span>
+            </div>
+
             {/* 1. User Profile FIRST PLACE */}
             <button 
               onClick={() => { setView('profile'); setIsMenuOpen(false); }}
@@ -360,14 +792,19 @@ export default function App() {
               <span>Activation</span>
             </button>
 
-            {/* 3. Admin Panel */}
-            <button 
-              onClick={() => { setIsAdminOpen(true); setIsMenuOpen(false); }}
-              className="w-full text-left px-3 py-2 text-xs font-bold text-orange-800 flex items-center gap-2.5 hover:bg-orange-100/50 transition-colors"
-            >
-              <ShieldCheck size={15} className="text-orange-600" />
-              <span>Admin Panel</span>
-            </button>
+            {/* 3. Admin Panel (ONLY FOR timegig2026@gmail.com) */}
+            {isAdminUser && (
+              <button 
+                onClick={() => { setIsAdminOpen(true); setIsMenuOpen(false); }}
+                className="w-full text-left px-3 py-2 text-xs font-bold text-orange-800 flex items-center justify-between hover:bg-orange-100/50 transition-colors"
+              >
+                <div className="flex items-center gap-2.5">
+                  <ShieldCheck size={15} className="text-orange-600" />
+                  <span>Admin Panel</span>
+                </div>
+                <span className="text-[8px] bg-orange-200 text-orange-900 font-extrabold px-1.5 py-0.5 rounded-full">Root</span>
+              </button>
+            )}
 
             <div className="my-1 border-t border-orange-100" />
 
@@ -591,7 +1028,7 @@ export default function App() {
                   <h2 className="font-extrabold text-base text-orange-900">
                     {profile.name || profile.surname ? `${profile.name} ${profile.surname}` : 'Job Candidate #1024'}
                   </h2>
-                  <p className="text-xs text-slate-500">{profile.email || 'Registered Applicant'}</p>
+                  <p className="text-xs text-slate-500">{currentUser?.email || profile.email || 'Registered Applicant'}</p>
                 </div>
               </div>
 
@@ -724,7 +1161,7 @@ export default function App() {
                   <label className="font-bold text-slate-600 block text-[11px]">Email Address</label>
                   <input 
                     type="email" 
-                    value={profile.email} 
+                    value={profile.email || currentUser?.email || ''} 
                     disabled={isProfileLocked}
                     onChange={(e) => setProfile(prev => ({ ...prev, email: e.target.value }))}
                     className="w-full p-2 bg-orange-50/50 border border-orange-100 rounded-lg outline-none disabled:bg-slate-100 disabled:text-slate-500" 
