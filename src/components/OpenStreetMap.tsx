@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { MapPin, Navigation } from 'lucide-react';
+import { Navigation } from 'lucide-react';
 
 export default function OpenStreetMap() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -11,20 +11,38 @@ export default function OpenStreetMap() {
   const [hasCenteredOnce, setHasCenteredOnce] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
 
+  const getProfileLogo = () => {
+    try {
+      const saved = localStorage.getItem('submissions');
+      if (saved) {
+        const subs = JSON.parse(saved);
+        const match = subs.slice().reverse().find((s: any) => s.files && s.files.face);
+        if (match && match.files.face) {
+          return match.files.face;
+        }
+      }
+    } catch (e) {}
+    return null;
+  };
+
   const updateDeviceLocation = (lat: number, lng: number, accuracy: number = 50) => {
     if (mapInstanceRef.current) {
       const map = mapInstanceRef.current;
+      const profileLogo = getProfileLogo();
 
-      // Custom pinpoint map pin icon
+      // Custom pinpoint marker with user profile logo
       const pinpointIcon = L.divIcon({
-        className: 'custom-pinpoint-marker',
+        className: 'custom-profile-pinpoint-marker',
         html: `
           <div class="relative flex flex-col items-center justify-center -translate-x-1/2 -translate-y-full">
             <div class="absolute -bottom-1 w-3 h-3 bg-orange-600 rotate-45 rounded-sm shadow-md"></div>
-            <div class="relative flex items-center justify-center w-10 h-10 bg-gradient-to-r from-orange-600 to-amber-600 rounded-full border-2 border-white shadow-[0_6px_20px_rgba(249,115,22,0.9)] text-white">
-              <svg class="w-5 h-5 filter drop-shadow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            <div class="relative flex items-center justify-center w-12 h-12 bg-white rounded-full border-3 border-orange-600 shadow-[0_6px_20px_rgba(249,115,22,0.9)] overflow-hidden">
+              ${profileLogo 
+                ? `<img src="${profileLogo}" alt="Profile Logo" class="w-full h-full object-cover" />`
+                : `<div class="w-full h-full bg-orange-100 flex items-center justify-center text-orange-700 font-black text-xs">ME</div>`
+              }
             </div>
-            <span class="absolute top-0 animate-ping inline-flex h-10 w-10 rounded-full bg-orange-500 opacity-60 pointer-events-none"></span>
+            <span class="absolute top-0 animate-ping inline-flex h-12 w-12 rounded-full bg-orange-500 opacity-60 pointer-events-none"></span>
           </div>
         `,
         iconSize: [0, 0],
@@ -35,7 +53,7 @@ export default function OpenStreetMap() {
         markerRef.current.setLatLng([lat, lng]);
       } else {
         markerRef.current = L.marker([lat, lng], { icon: pinpointIcon }).addTo(map);
-        markerRef.current.bindPopup('<div style="font-family:sans-serif;font-weight:bold;color:#c2410c;padding:4px;">📍 My Exact Device GPS Location</div>');
+        markerRef.current.bindPopup('<div style="font-family:sans-serif;font-weight:bold;color:#c2410c;padding:4px;">📍 My Exact Location & Profile</div>');
       }
 
       if (circleRef.current) {
