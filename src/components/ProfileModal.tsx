@@ -1,5 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
-import { User, Camera, Mail, Shield, Check, X, LogOut, CheckCircle2 } from 'lucide-react';
+import { 
+  User, 
+  Camera, 
+  Mail, 
+  Shield, 
+  Check, 
+  X, 
+  CheckCircle2, 
+  Phone, 
+  MapPin, 
+  Calendar, 
+  Globe, 
+  Plus, 
+  Trash2, 
+  Briefcase, 
+  Sparkles, 
+  Building2, 
+  Share2, 
+  ExternalLink,
+  ChevronDown
+} from 'lucide-react';
 import { getApplications, ApplicationSubmission } from '../utils/applicationStorage';
 
 interface ProfileModalProps {
@@ -7,41 +27,181 @@ interface ProfileModalProps {
   onClose: () => void;
 }
 
-export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
-  const [profile, setProfile] = useState({
-    name: '',
-    email: localStorage.getItem('currentUserEmail') || '',
-    role: 'Member',
-    avatar: '',
-  });
-  const [approvedApp, setApprovedApp] = useState<ApplicationSubmission | null>(null);
+export interface SocialLink {
+  id: string;
+  platform: string;
+  url: string;
+}
 
+export interface UserProfileData {
+  avatar: string;
+  name: string;
+  middleName: string;
+  surname: string;
+  dateOfBirth: string;
+  address: string;
+  location: string;
+  province: string;
+  contactNumber: string;
+  email: string;
+  socialLinks: SocialLink[];
+  skills: string[];
+  workLookingFor: string;
+  workTypes: string[];
+  listedInSeekers: boolean;
+  role: string;
+}
+
+export const SA_PROVINCES = [
+  'Gauteng',
+  'Western Cape',
+  'KwaZulu-Natal',
+  'Eastern Cape',
+  'Free State',
+  'Limpopo',
+  'Mpumalanga',
+  'North West',
+  'Northern Cape'
+];
+
+export const POPULAR_SKILLS = [
+  'Electrician',
+  'Plumber',
+  'Carpenter',
+  'Web Developer',
+  'Courier / Delivery Driver',
+  'Housekeeper / Cleaner',
+  'Painter',
+  'Welder',
+  'Gardener / Landscaper',
+  'Graphic Designer',
+  'Barista / Hospitality',
+  'Tiler & Flooring',
+  'Auto Mechanic',
+  'Security Specialist'
+];
+
+export const WORK_PREFERENCES = [
+  'Full-Time Gigs',
+  'Part-Time Gigs',
+  'Weekend Jobs',
+  'Freelance & Contract',
+  'Urgent / On-Demand Shifts',
+  'Remote / Work from Home',
+  'On-Site Physical Work'
+];
+
+export const SOCIAL_PLATFORMS = [
+  'LinkedIn',
+  'X (Twitter)',
+  'Instagram',
+  'Facebook',
+  'GitHub',
+  'TikTok',
+  'YouTube',
+  'Portfolio / Website',
+  'WhatsApp Business',
+  'Other'
+];
+
+export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
+  const [profile, setProfile] = useState<UserProfileData>({
+    avatar: '',
+    name: '',
+    middleName: '',
+    surname: '',
+    dateOfBirth: '',
+    address: '',
+    location: '',
+    province: 'Gauteng',
+    contactNumber: '',
+    email: '',
+    socialLinks: [],
+    skills: [],
+    workLookingFor: '',
+    workTypes: [],
+    listedInSeekers: false,
+    role: 'Member'
+  });
+
+  const [approvedApp, setApprovedApp] = useState<ApplicationSubmission | null>(null);
+  const [skillInput, setSkillInput] = useState('');
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Load existing profile or fallbacks on open
   useEffect(() => {
-    if (isOpen) {
-      try {
-        const apps = getApplications();
-        const approved = apps.find(a => a.status === 'approved' || a.popStatus === 'pop_verified');
-        setApprovedApp(approved || null);
+    if (!isOpen) return;
 
+    try {
+      // 1. Check approval status
+      const apps = getApplications();
+      const approved = apps.find(a => a.status === 'approved' || a.popStatus === 'pop_verified');
+      setApprovedApp(approved || null);
+
+      // 2. Load stored profile
+      const savedProfile = localStorage.getItem('user_profile');
+      let loadedProfile: Partial<UserProfileData> = {};
+      if (savedProfile) {
+        try {
+          loadedProfile = JSON.parse(savedProfile);
+        } catch (e) {}
+      }
+
+      // 3. Fallback face photo from submissions if not in profile
+      let avatar = loadedProfile.avatar || '';
+      if (!avatar) {
         const savedSubs = localStorage.getItem('submissions');
         if (savedSubs) {
           const subs = JSON.parse(savedSubs);
           const match = subs.slice().reverse().find((s: any) => s.files && s.files.face);
           if (match && match.files.face) {
-            setProfile(prev => ({ ...prev, avatar: match.files.face }));
+            avatar = match.files.face;
           }
         }
-        const savedProfile = localStorage.getItem('user_profile');
-        if (savedProfile) {
-          const parsed = JSON.parse(savedProfile);
-          setProfile(prev => ({ ...prev, ...parsed }));
+      }
+
+      // 4. Fallback email & contact info
+      const fallbackEmail = loadedProfile.email || localStorage.getItem('currentUserEmail') || '';
+      
+      // If user had applied earlier, use application details as default if blank
+      let name = loadedProfile.name || '';
+      let surname = loadedProfile.surname || '';
+      let contactNumber = loadedProfile.contactNumber || '';
+
+      if (!name && apps.length > 0) {
+        const latestApp = apps[0];
+        if (latestApp.fullName) {
+          const parts = latestApp.fullName.trim().split(' ');
+          name = parts[0] || '';
+          if (parts.length > 1) {
+            surname = parts.slice(1).join(' ');
+          }
         }
-      } catch (e) {}
+        if (!contactNumber && latestApp.phone) {
+          contactNumber = latestApp.phone;
+        }
+      }
+
+      setProfile(prev => ({
+        ...prev,
+        ...loadedProfile,
+        avatar: avatar || prev.avatar,
+        email: fallbackEmail,
+        name: name || prev.name,
+        surname: surname || prev.surname,
+        contactNumber: contactNumber || prev.contactNumber,
+        socialLinks: Array.isArray(loadedProfile.socialLinks) ? loadedProfile.socialLinks : [],
+        skills: Array.isArray(loadedProfile.skills) ? loadedProfile.skills : [],
+        workTypes: Array.isArray(loadedProfile.workTypes) ? loadedProfile.workTypes : [],
+        province: loadedProfile.province || 'Gauteng'
+      }));
+    } catch (e) {
+      console.error('Error loading profile', e);
     }
   }, [isOpen]);
 
+  // Handle avatar photo upload
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -49,7 +209,8 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
       reader.onloadend = () => {
         const result = reader.result as string;
         setProfile(prev => ({ ...prev, avatar: result }));
-        // Save to submissions so OpenStreetMap picks it up
+
+        // Save to submissions so Leaflet OpenStreetMap picks up the live face pin
         try {
           const savedSubs = localStorage.getItem('submissions');
           const subs = savedSubs ? JSON.parse(savedSubs) : [];
@@ -59,51 +220,197 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             files: { face: result }
           });
           localStorage.setItem('submissions', JSON.stringify(subs));
-          localStorage.setItem('user_profile', JSON.stringify({ ...profile, avatar: result }));
         } catch (err) {}
       };
       reader.readAsDataURL(file);
     }
   };
 
+  // Add a new social media link
+  const handleAddSocialLink = () => {
+    const newLink: SocialLink = {
+      id: `social-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      platform: 'LinkedIn',
+      url: ''
+    };
+    setProfile(prev => ({
+      ...prev,
+      socialLinks: [...prev.socialLinks, newLink]
+    }));
+  };
+
+  // Update a social media link
+  const handleUpdateSocialLink = (id: string, field: 'platform' | 'url', value: string) => {
+    setProfile(prev => ({
+      ...prev,
+      socialLinks: prev.socialLinks.map(l => l.id === id ? { ...l, [field]: value } : l)
+    }));
+  };
+
+  // Remove a social media link
+  const handleRemoveSocialLink = (id: string) => {
+    setProfile(prev => ({
+      ...prev,
+      socialLinks: prev.socialLinks.filter(l => l.id !== id)
+    }));
+  };
+
+  // Add custom skill
+  const handleAddSkill = (skillToAdd?: string) => {
+    const val = (skillToAdd || skillInput).trim();
+    if (!val) return;
+    if (!profile.skills.includes(val)) {
+      setProfile(prev => ({
+        ...prev,
+        skills: [...prev.skills, val]
+      }));
+    }
+    setSkillInput('');
+  };
+
+  // Remove skill
+  const handleRemoveSkill = (skillToRemove: string) => {
+    setProfile(prev => ({
+      ...prev,
+      skills: prev.skills.filter(s => s !== skillToRemove)
+    }));
+  };
+
+  // Toggle work type preference
+  const handleToggleWorkType = (type: string) => {
+    setProfile(prev => {
+      const exists = prev.workTypes.includes(type);
+      return {
+        ...prev,
+        workTypes: exists 
+          ? prev.workTypes.filter(t => t !== type)
+          : [...prev.workTypes, type]
+      };
+    });
+  };
+
+  // Save profile to localStorage and sync across app
+  const handleSave = () => {
+    try {
+      localStorage.setItem('user_profile', JSON.stringify(profile));
+      if (profile.email) {
+        localStorage.setItem('currentUserEmail', profile.email);
+      }
+
+      // Only sync to seekers if user explicitly turned on listedInSeekers and provided details
+      if (profile.listedInSeekers && (profile.name || profile.surname)) {
+        try {
+          const fullName = [profile.name, profile.middleName, profile.surname].filter(Boolean).join(' ');
+          const savedSeekers = localStorage.getItem('gigs_seekers');
+          const seekersList = savedSeekers ? JSON.parse(savedSeekers) : [];
+          
+          // Check if user already exists as a seeker
+          const userSeekerIdx = seekersList.findIndex((s: any) => s.id === 'user-profile-seeker');
+          const seekerData = {
+            id: 'user-profile-seeker',
+            name: fullName || 'Local Talent',
+            profession: profile.workLookingFor ? profile.workLookingFor.substring(0, 45) : (profile.skills[0] || 'Gig Worker'),
+            category: 'Services',
+            rate: 'Negotiable',
+            location: [profile.location, profile.province].filter(Boolean).join(', ') || 'Local Area',
+            distance: '0.1 km away',
+            rating: 5.0,
+            reviewsCount: 1,
+            avatar: profile.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80',
+            available: true,
+            phone: profile.contactNumber || '',
+            email: profile.email || '',
+            skills: profile.skills.length > 0 ? profile.skills : ['Reliable', 'Prompt']
+          };
+
+          if (userSeekerIdx >= 0) {
+            seekersList[userSeekerIdx] = seekerData;
+          } else {
+            seekersList.unshift(seekerData);
+          }
+          localStorage.setItem('gigs_seekers', JSON.stringify(seekersList));
+        } catch (e) {}
+      }
+
+      window.dispatchEvent(new Event('user_profile_updated'));
+      setSaveSuccess(true);
+      setTimeout(() => {
+        setSaveSuccess(false);
+      }, 2500);
+    } catch (err) {
+      console.error('Failed to save profile', err);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-      <div className="relative w-full max-w-md bg-slate-900 border border-orange-500/30 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden text-white">
+    <div className="fixed inset-0 z-[3200] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+      <div className="relative w-full max-w-2xl bg-slate-900 border border-orange-500/30 rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.85)] flex flex-col max-h-[92dvh] overflow-hidden text-white font-sans">
         
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-orange-600/20 to-amber-600/20 border-b border-orange-500/20">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-3.5 bg-gradient-to-r from-orange-600/20 via-amber-600/15 to-transparent border-b border-orange-500/20 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-orange-600/30 rounded-xl text-orange-400">
+            <div className="p-2 bg-orange-600/30 rounded-xl text-orange-400 border border-orange-500/30">
               <User size={20} />
             </div>
-            <h2 className="text-lg font-extrabold tracking-wide">User Profile</h2>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-black tracking-wide">User Profile</h2>
+                {approvedApp ? (
+                  <span className="flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                    <CheckCircle2 size={11} />
+                    {approvedApp.type === 'tenant' ? 'Approved Tenant' : 'Approved Subscriber'}
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                    GPS Active
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400 font-medium">Manage your personal, contact, skills, and gig work information</p>
+            </div>
           </div>
           <button 
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+            title="Close Profile"
           >
             <X size={20} />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-6">
-          {/* Avatar / Logo Upload */}
-          <div className="flex flex-col items-center justify-center">
+        {/* Success Alert Banner */}
+        {saveSuccess && (
+          <div className="bg-emerald-600/20 border-b border-emerald-500/40 px-5 py-2.5 flex items-center justify-between animate-fadeIn text-emerald-300 text-xs font-bold">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={16} className="text-emerald-400" />
+              <span>Profile details saved successfully & synced with map pin!</span>
+            </div>
+            <button onClick={() => setSaveSuccess(false)} className="text-emerald-400 hover:text-emerald-200">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        {/* Scrollable Form Body */}
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+          
+          {/* 1. Avatar Photo (Face Only) */}
+          <div className="flex flex-col sm:flex-row items-center gap-5 p-4 bg-slate-800/40 rounded-2xl border border-slate-700/60">
             <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-              <div className="w-24 h-24 rounded-full border-4 border-orange-500/80 overflow-hidden bg-slate-800 shadow-[0_0_25px_rgba(249,115,22,0.4)] flex items-center justify-center">
+              <div className="w-24 h-24 rounded-full border-4 border-orange-500/80 overflow-hidden bg-slate-800 shadow-[0_0_20px_rgba(249,115,22,0.35)] flex items-center justify-center">
                 {profile.avatar ? (
                   <img src={profile.avatar} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
-                  <User size={40} className="text-orange-400" />
+                  <User size={42} className="text-orange-400/80" />
                 )}
               </div>
-              <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Camera size={24} className="text-white" />
+              <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Camera size={24} className="text-white drop-shadow" />
               </div>
             </div>
+            
             <input 
               ref={fileInputRef} 
               type="file" 
@@ -111,60 +418,447 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
               className="hidden" 
               onChange={handleImageUpload} 
             />
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="mt-3 text-xs font-bold text-orange-400 hover:text-orange-300 transition-colors flex items-center gap-1.5"
-            >
-              <Camera size={14} /> Change Profile Photo / Logo
-            </button>
-            <p className="text-[10px] text-slate-400 mt-1">This photo will appear on your exact map location pin</p>
-          </div>
 
-          {/* Details */}
-          <div className="space-y-4 bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
-            <div>
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Email Address</label>
-              <div className="flex items-center gap-2 mt-1 text-sm font-semibold text-white bg-slate-900/80 px-3 py-2.5 rounded-xl border border-slate-700">
-                <Mail size={16} className="text-orange-400" />
-                <span>{profile.email}</span>
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Account Status</label>
-              <div className="flex items-center justify-between mt-1 text-sm font-semibold text-white bg-slate-900/80 px-3 py-2.5 rounded-xl border border-slate-700">
-                <div className="flex items-center gap-2">
-                  {approvedApp ? (
-                    <CheckCircle2 size={16} className="text-emerald-400" />
-                  ) : (
-                    <Shield size={16} className="text-emerald-400" />
-                  )}
-                  <span>
-                    {approvedApp 
-                      ? (approvedApp.type === 'tenant' ? 'Fully Approved Tenant' : 'Fully Approved Subscriber')
-                      : 'Verified & Active GPS'}
-                  </span>
-                </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
-                  approvedApp 
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' 
-                    : 'bg-emerald-500/20 text-emerald-400'
-                }`}>
-                  {approvedApp ? 'Approved' : 'Online'}
+            <div className="space-y-1 text-center sm:text-left flex-1">
+              <div className="flex items-center justify-center sm:justify-start gap-2">
+                <h3 className="text-sm font-black text-white">Profile Photo (Face Only)</h3>
+                <span className="text-[10px] font-bold text-orange-400 bg-orange-400/10 px-2 py-0.5 rounded-md border border-orange-400/30">
+                  Live GPS Pin
                 </span>
               </div>
+              <p className="text-xs text-slate-300">
+                Upload a clear face photo. This picture displays on your exact GPS location marker on the live map.
+              </p>
+              <button 
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer"
+              >
+                <Camera size={14} />
+                <span>{profile.avatar ? 'Change Face Photo' : 'Upload Face Photo'}</span>
+              </button>
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex gap-3 pt-2">
-            <button
-              onClick={onClose}
-              className="flex-1 bg-gradient-to-r from-orange-600 to-amber-600 text-white py-3 rounded-2xl font-extrabold text-sm shadow-[0_4px_16px_rgba(249,115,22,0.4)] hover:scale-[1.02] active:scale-98 transition-all cursor-pointer"
-            >
-              Save & Close
-            </button>
+          {/* 2. Personal Identity: Name, Middle Name (Optional), Surname, Date of Birth */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 pb-1 border-b border-slate-800">
+              <User size={16} className="text-orange-400" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">Personal Information</h3>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Name <span className="text-orange-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={profile.name}
+                  onChange={(e) => setProfile(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Sipho"
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Middle Name <span className="text-slate-500 font-normal lowercase">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={profile.middleName}
+                  onChange={(e) => setProfile(prev => ({ ...prev, middleName: e.target.value }))}
+                  placeholder="Optional middle name"
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Surname <span className="text-orange-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={profile.surname}
+                  onChange={(e) => setProfile(prev => ({ ...prev, surname: e.target.value }))}
+                  placeholder="e.g. Khumalo"
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Date of Birth */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                Date of Birth
+              </label>
+              <div className="relative">
+                <Calendar size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-orange-400 pointer-events-none" />
+                <input
+                  type="date"
+                  value={profile.dateOfBirth}
+                  max={new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setProfile(prev => ({ ...prev, dateOfBirth: e.target.value }))}
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl pl-11 pr-4 py-2.5 text-xs text-white focus:outline-none transition-colors [color-scheme:dark]"
+                />
+              </div>
+            </div>
           </div>
+
+          {/* 3. Address, Location & Province */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 pb-1 border-b border-slate-800">
+              <MapPin size={16} className="text-orange-400" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">Address & Geographic Details</h3>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Address
+                </label>
+                <input
+                  type="text"
+                  value={profile.address}
+                  onChange={(e) => setProfile(prev => ({ ...prev, address: e.target.value }))}
+                  placeholder="e.g. 14 Main Street, Apartment 4B"
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    Location / City / Suburb
+                  </label>
+                  <input
+                    type="text"
+                    value={profile.location}
+                    onChange={(e) => setProfile(prev => ({ ...prev, location: e.target.value }))}
+                    placeholder="e.g. Sandton, Johannesburg"
+                    className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    Province
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={profile.province}
+                      onChange={(e) => setProfile(prev => ({ ...prev, province: e.target.value }))}
+                      className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none transition-colors appearance-none pr-9 cursor-pointer"
+                    >
+                      {SA_PROVINCES.map((prov) => (
+                        <option key={prov} value={prov} className="bg-slate-900 text-white">
+                          {prov}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 4. Contact Details: Phone & Email */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 pb-1 border-b border-slate-800">
+              <Phone size={16} className="text-orange-400" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">Contact Details</h3>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Contact Number
+                </label>
+                <div className="relative">
+                  <Phone size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-orange-400 pointer-events-none" />
+                  <input
+                    type="tel"
+                    value={profile.contactNumber}
+                    onChange={(e) => setProfile(prev => ({ ...prev, contactNumber: e.target.value }))}
+                    placeholder="e.g. +27 82 123 4567"
+                    className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl pl-11 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-orange-400 pointer-events-none" />
+                  <input
+                    type="email"
+                    value={profile.email}
+                    onChange={(e) => setProfile(prev => ({ ...prev, email: e.target.value }))}
+                    placeholder="e.g. name@example.com"
+                    className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl pl-11 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 5. Social Media Links (User can add more links) */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between pb-1 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Share2 size={16} className="text-orange-400" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">Social Media Links</h3>
+              </div>
+              <button
+                type="button"
+                onClick={handleAddSocialLink}
+                className="flex items-center gap-1 px-2.5 py-1 bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 border border-orange-500/40 rounded-lg text-xs font-bold transition-all cursor-pointer"
+              >
+                <Plus size={13} />
+                <span>Add Social Link</span>
+              </button>
+            </div>
+
+            {profile.socialLinks.length === 0 ? (
+              <div className="p-4 bg-slate-950/60 border border-dashed border-slate-800 rounded-2xl text-center space-y-2">
+                <Globe size={24} className="mx-auto text-slate-600" />
+                <p className="text-xs text-slate-400">No social media links added yet.</p>
+                <button
+                  type="button"
+                  onClick={handleAddSocialLink}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                >
+                  <Plus size={14} className="text-orange-400" />
+                  <span>Add First Link (LinkedIn, X, Instagram, etc.)</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {profile.socialLinks.map((link) => (
+                  <div 
+                    key={link.id} 
+                    className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2.5 bg-slate-950 border border-slate-800 rounded-xl"
+                  >
+                    <div className="sm:w-44 shrink-0">
+                      <select
+                        value={link.platform}
+                        onChange={(e) => handleUpdateSocialLink(link.id, 'platform', e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-orange-400 font-bold focus:outline-none focus:border-orange-500"
+                      >
+                        {SOCIAL_PLATFORMS.map((plat) => (
+                          <option key={plat} value={plat}>
+                            {plat}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex-1 relative">
+                      <input
+                        type="text"
+                        value={link.url}
+                        onChange={(e) => handleUpdateSocialLink(link.id, 'url', e.target.value)}
+                        placeholder={`Enter ${link.platform} link or username...`}
+                        className="w-full bg-slate-900 border border-slate-700 focus:border-orange-500 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveSocialLink(link.id)}
+                      className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer self-end sm:self-center"
+                      title="Remove Link"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 6. Skills */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 pb-1 border-b border-slate-800">
+              <Sparkles size={16} className="text-orange-400" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">Skills</h3>
+            </div>
+
+            {/* Input to type custom skill */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={skillInput}
+                onChange={(e) => setSkillInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddSkill();
+                  }
+                }}
+                placeholder="Type a skill (e.g. Residential Wiring, Graphic Design) and press Enter..."
+                className="flex-1 bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+              />
+              <button
+                type="button"
+                onClick={() => handleAddSkill()}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-md"
+              >
+                Add Skill
+              </button>
+            </div>
+
+            {/* Active Skills Badges */}
+            {profile.skills.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 p-3 bg-slate-950/70 border border-slate-800 rounded-2xl">
+                {profile.skills.map((skill) => (
+                  <span
+                    key={skill}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-500/20 text-orange-300 border border-orange-500/30 rounded-xl text-xs font-bold"
+                  >
+                    <span>{skill}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveSkill(skill)}
+                      className="hover:text-red-400 p-0.5 rounded-full transition-colors cursor-pointer"
+                      title="Remove skill"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Quick suggested skills chips */}
+            <div>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                Popular suggestions (click to add):
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {POPULAR_SKILLS.map((item) => {
+                  const alreadyAdded = profile.skills.includes(item);
+                  return (
+                    <button
+                      key={item}
+                      type="button"
+                      disabled={alreadyAdded}
+                      onClick={() => handleAddSkill(item)}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                        alreadyAdded
+                          ? 'bg-slate-800/60 text-slate-500 border-slate-800 cursor-not-allowed'
+                          : 'bg-slate-900 text-slate-300 hover:text-white border-slate-800 hover:border-orange-500/50 hover:bg-slate-800'
+                      }`}
+                    >
+                      + {item}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* 7. Looking for what type of work on the app */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 pb-1 border-b border-slate-800">
+              <Briefcase size={16} className="text-orange-400" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">
+                Looking for What Type of Work on the App
+              </h3>
+            </div>
+
+            {/* Work Preference Tags */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                Gig / Job Work Preferences
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {WORK_PREFERENCES.map((pref) => {
+                  const isSelected = profile.workTypes.includes(pref);
+                  return (
+                    <button
+                      key={pref}
+                      type="button"
+                      onClick={() => handleToggleWorkType(pref)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        isSelected
+                          ? 'bg-orange-600 text-white shadow-md'
+                          : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                      }`}
+                    >
+                      {isSelected ? <Check size={12} className="stroke-[3]" /> : <Plus size={12} />}
+                      <span>{pref}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Work Description / Target Roles */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                Describe the specific work, services, or gigs you are looking for
+              </label>
+              <textarea
+                rows={3}
+                value={profile.workLookingFor}
+                onChange={(e) => setProfile(prev => ({ ...prev, workLookingFor: e.target.value }))}
+                placeholder="e.g. Seeking urgent electrical call-outs, solar maintenance projects, or certified domestic wiring jobs around Sandton and Johannesburg North..."
+                className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors resize-none"
+              />
+            </div>
+          </div>
+
+          {/* Account Status Card */}
+          <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-xl ${approvedApp ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
+                {approvedApp ? <CheckCircle2 size={18} /> : <Shield size={18} />}
+              </div>
+              <div>
+                <p className="text-xs font-black text-white">
+                  {approvedApp 
+                    ? (approvedApp.type === 'tenant' ? 'Verified & Approved Tenant' : 'Verified & Approved Subscriber')
+                    : 'Standard Member & GPS Active'}
+                </p>
+                <p className="text-[10px] text-slate-400">
+                  {approvedApp 
+                    ? 'Eligible for passive income payouts and instant gig bookings'
+                    : 'Submit verification in Activation tab to unlock passive monthly earnings'}
+                </p>
+              </div>
+            </div>
+            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+              approvedApp ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-slate-800 text-slate-400'
+            }`}>
+              {approvedApp ? 'Verified' : 'Member'}
+            </span>
+          </div>
+
+        </div>
+
+        {/* Footer Actions */}
+        <div className="px-5 sm:px-6 py-3.5 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+          >
+            Close
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSave}
+            className="flex-1 sm:flex-none sm:min-w-[180px] py-2.5 px-6 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white rounded-xl font-black text-xs shadow-[0_4px_16px_rgba(249,115,22,0.4)] hover:brightness-110 active:scale-98 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+          >
+            <Check size={16} />
+            <span>Save Profile Changes</span>
+          </button>
         </div>
 
       </div>

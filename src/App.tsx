@@ -4,12 +4,14 @@ import BottomNavBar from './components/BottomNavBar';
 import ProfileModal from './components/ProfileModal';
 import ActivationModal from './components/ActivationModal';
 import AdminPortal from './components/AdminPortal';
+import SeekersModal from './components/SeekersModal';
 import { getApplications } from './utils/applicationStorage';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('gigs');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isActivationOpen, setIsActivationOpen] = useState(false);
+  const [isSeekersOpen, setIsSeekersOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isFullyApproved, setIsFullyApproved] = useState(false);
   const locateRef = useRef<(() => void) | null>(null);
@@ -46,7 +48,16 @@ export default function App() {
             setIsActivationOpen(true);
           }
         }}
+        onOpenSeekers={() => setIsSeekersOpen(true)}
         isFullyApproved={isFullyApproved}
+      />
+
+      <SeekersModal
+        isOpen={isSeekersOpen}
+        onClose={() => {
+          setIsSeekersOpen(false);
+          setActiveTab('gigs');
+        }}
       />
 
       <ActivationModal

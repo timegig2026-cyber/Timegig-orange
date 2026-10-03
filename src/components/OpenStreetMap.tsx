@@ -450,7 +450,7 @@ export default function OpenStreetMap({ onRegisterLocate, onOpenAdmin }: OpenStr
       </div>
 
       {/* Zoom Controls at Bottom Center Corner (Icons Only) */}
-      <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[1500] flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-xl border border-orange-500/30 p-1.5 rounded-2xl shadow-[0_8px_25px_rgba(0,0,0,0.7)] pointer-events-auto">
+      <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[1500] flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-xl border border-orange-500/30 p-1.5 rounded-2xl shadow-[0_8px_25px_rgba(0,0,0,0.7)] pointer-events-auto">
         <button
           onClick={handleZoomIn}
           className="p-2.5 text-white bg-slate-800 hover:bg-orange-600 rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center"
