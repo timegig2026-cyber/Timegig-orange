@@ -18,7 +18,12 @@ import {
   Building2, 
   Share2, 
   ExternalLink,
-  ChevronDown
+  ChevronDown,
+  Lock,
+  Unlock,
+  AlertCircle,
+  Clock,
+  Info
 } from 'lucide-react';
 import { getApplications, ApplicationSubmission } from '../utils/applicationStorage';
 
@@ -35,6 +40,8 @@ export interface SocialLink {
 
 export interface UserProfileData {
   avatar: string;
+  lastAvatarChangeTimestamp?: number; // Milliseconds timestamp of last avatar change (once a month restriction)
+  isLocked?: boolean;                 // Whether profile is locked after editing
   name: string;
   middleName: string;
   surname: string;
@@ -104,9 +111,14 @@ export const SOCIAL_PLATFORMS = [
   'Other'
 ];
 
+// 30 Days in milliseconds (1 month)
+const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+
 export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const [profile, setProfile] = useState<UserProfileData>({
     avatar: '',
+    lastAvatarChangeTimestamp: undefined,
+    isLocked: false,
     name: '',
     middleName: '',
     surname: '',
@@ -126,7 +138,8 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
   const [approvedApp, setApprovedApp] = useState<ApplicationSubmission | null>(null);
   const [skillInput, setSkillInput] = useState('');
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveSuccessMessage, setSaveSuccessMessage] = useState('');
+  const [lockAlertMessage, setLockAlertMessage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load existing profile or fallbacks on open
@@ -187,6 +200,8 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
         ...prev,
         ...loadedProfile,
         avatar: avatar || prev.avatar,
+        lastAvatarChangeTimestamp: loadedProfile.lastAvatarChangeTimestamp,
+        isLocked: loadedProfile.isLocked ?? false,
         email: fallbackEmail,
         name: name || prev.name,
         surname: surname || prev.surname,
@@ -201,14 +216,56 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     }
   }, [isOpen]);
 
+  // Calculate if profile picture can be changed (once a month restriction)
+  const now = Date.now();
+  const lastChange = profile.lastAvatarChangeTimestamp || 0;
+  const timeSinceLastChange = now - lastChange;
+  const isAvatarChangeAllowed = !profile.lastAvatarChangeTimestamp || timeSinceLastChange >= ONE_MONTH_MS;
+  const daysRemaining = Math.max(1, Math.ceil((ONE_MONTH_MS - timeSinceLastChange) / (24 * 60 * 60 * 1000)));
+  const nextEligibleDate = new Date(lastChange + ONE_MONTH_MS).toLocaleDateString('en-ZA', { 
+    day: 'numeric', 
+    month: 'long', 
+    year: 'numeric' 
+  });
+
+  // Handle clicking on avatar upload
+  const handleAvatarClick = () => {
+    if (profile.isLocked) {
+      setLockAlertMessage('Profile is currently locked. Click "Unlock to Edit" to modify your profile.');
+      setTimeout(() => setLockAlertMessage(''), 4000);
+      return;
+    }
+    if (!isAvatarChangeAllowed) {
+      setLockAlertMessage(`Profile picture / logo can only be changed once a month. Next change available in ${daysRemaining} day(s) on ${nextEligibleDate}.`);
+      setTimeout(() => setLockAlertMessage(''), 4500);
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
   // Handle avatar photo upload
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (profile.isLocked) {
+        setLockAlertMessage('Profile is locked.');
+        return;
+      }
+      if (!isAvatarChangeAllowed) {
+        setLockAlertMessage(`Profile picture / logo can only be changed once a month.`);
+        return;
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
         const result = reader.result as string;
-        setProfile(prev => ({ ...prev, avatar: result }));
+        const updatedTime = Date.now();
+        const updated = {
+          ...profile,
+          avatar: result,
+          lastAvatarChangeTimestamp: updatedTime
+        };
+        setProfile(updated);
 
         // Save to submissions so Leaflet OpenStreetMap picks up the live face pin
         try {
@@ -220,7 +277,11 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             files: { face: result }
           });
           localStorage.setItem('submissions', JSON.stringify(subs));
+          localStorage.setItem('user_profile', JSON.stringify(updated));
         } catch (err) {}
+
+        setSaveSuccessMessage('Profile photo updated! (Next change available in 30 days)');
+        setTimeout(() => setSaveSuccessMessage(''), 3500);
       };
       reader.readAsDataURL(file);
     }
@@ -228,6 +289,11 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
   // Add a new social media link
   const handleAddSocialLink = () => {
+    if (profile.isLocked) {
+      setLockAlertMessage('Profile is locked. Unlock to edit social media links.');
+      setTimeout(() => setLockAlertMessage(''), 3000);
+      return;
+    }
     const newLink: SocialLink = {
       id: `social-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       platform: 'LinkedIn',
@@ -241,6 +307,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
   // Update a social media link
   const handleUpdateSocialLink = (id: string, field: 'platform' | 'url', value: string) => {
+    if (profile.isLocked) return;
     setProfile(prev => ({
       ...prev,
       socialLinks: prev.socialLinks.map(l => l.id === id ? { ...l, [field]: value } : l)
@@ -249,6 +316,11 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
   // Remove a social media link
   const handleRemoveSocialLink = (id: string) => {
+    if (profile.isLocked) {
+      setLockAlertMessage('Profile is locked. Unlock to remove links.');
+      setTimeout(() => setLockAlertMessage(''), 3000);
+      return;
+    }
     setProfile(prev => ({
       ...prev,
       socialLinks: prev.socialLinks.filter(l => l.id !== id)
@@ -257,6 +329,11 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
   // Add custom skill
   const handleAddSkill = (skillToAdd?: string) => {
+    if (profile.isLocked) {
+      setLockAlertMessage('Profile is locked. Unlock to add skills.');
+      setTimeout(() => setLockAlertMessage(''), 3000);
+      return;
+    }
     const val = (skillToAdd || skillInput).trim();
     if (!val) return;
     if (!profile.skills.includes(val)) {
@@ -270,6 +347,11 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
   // Remove skill
   const handleRemoveSkill = (skillToRemove: string) => {
+    if (profile.isLocked) {
+      setLockAlertMessage('Profile is locked. Unlock to remove skills.');
+      setTimeout(() => setLockAlertMessage(''), 3000);
+      return;
+    }
     setProfile(prev => ({
       ...prev,
       skills: prev.skills.filter(s => s !== skillToRemove)
@@ -278,6 +360,11 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
   // Toggle work type preference
   const handleToggleWorkType = (type: string) => {
+    if (profile.isLocked) {
+      setLockAlertMessage('Profile is locked. Unlock to change work preferences.');
+      setTimeout(() => setLockAlertMessage(''), 3000);
+      return;
+    }
     setProfile(prev => {
       const exists = prev.workTypes.includes(type);
       return {
@@ -289,10 +376,15 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     });
   };
 
-  // Save profile to localStorage and sync across app
-  const handleSave = () => {
+  // Save profile helper
+  const saveProfileData = (lockedState: boolean) => {
     try {
-      localStorage.setItem('user_profile', JSON.stringify(profile));
+      const updatedProfile = {
+        ...profile,
+        isLocked: lockedState
+      };
+      setProfile(updatedProfile);
+      localStorage.setItem('user_profile', JSON.stringify(updatedProfile));
       if (profile.email) {
         localStorage.setItem('currentUserEmail', profile.email);
       }
@@ -304,7 +396,6 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
           const savedSeekers = localStorage.getItem('gigs_seekers');
           const seekersList = savedSeekers ? JSON.parse(savedSeekers) : [];
           
-          // Check if user already exists as a seeker
           const userSeekerIdx = seekersList.findIndex((s: any) => s.id === 'user-profile-seeker');
           const seekerData = {
             id: 'user-profile-seeker',
@@ -333,13 +424,38 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
       }
 
       window.dispatchEvent(new Event('user_profile_updated'));
-      setSaveSuccess(true);
-      setTimeout(() => {
-        setSaveSuccess(false);
-      }, 2500);
+      return true;
     } catch (err) {
       console.error('Failed to save profile', err);
+      return false;
     }
+  };
+
+  // Action: Save profile and keep editing
+  const handleSaveOnly = () => {
+    if (saveProfileData(false)) {
+      setSaveSuccessMessage('Profile saved successfully!');
+      setTimeout(() => setSaveSuccessMessage(''), 2500);
+    }
+  };
+
+  // Action: Finish Editing and Lock Profile
+  const handleFinishEditingAndLock = () => {
+    if (saveProfileData(true)) {
+      setSaveSuccessMessage('Profile finished and locked! Your details are safely secured.');
+      setTimeout(() => setSaveSuccessMessage(''), 3500);
+    }
+  };
+
+  // Action: Unlock Profile to edit
+  const handleUnlockProfile = () => {
+    const updated = { ...profile, isLocked: false };
+    setProfile(updated);
+    try {
+      localStorage.setItem('user_profile', JSON.stringify(updated));
+    } catch (e) {}
+    setSaveSuccessMessage('Profile unlocked for editing.');
+    setTimeout(() => setSaveSuccessMessage(''), 2500);
   };
 
   if (!isOpen) return null;
@@ -348,7 +464,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     <div className="fixed inset-0 z-[3200] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
       <div className="relative w-full max-w-2xl bg-slate-900 border border-orange-500/30 rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.85)] flex flex-col max-h-[92dvh] overflow-hidden text-white font-sans">
         
-        {/* Header */}
+        {/* Header with Lock Status */}
         <div className="flex items-center justify-between px-5 sm:px-6 py-3.5 bg-gradient-to-r from-orange-600/20 via-amber-600/15 to-transparent border-b border-orange-500/20 shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-orange-600/30 rounded-xl text-orange-400 border border-orange-500/30">
@@ -357,37 +473,89 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-black tracking-wide">User Profile</h2>
-                {approvedApp ? (
-                  <span className="flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
-                    <CheckCircle2 size={11} />
-                    {approvedApp.type === 'tenant' ? 'Approved Tenant' : 'Approved Subscriber'}
+                
+                {/* Profile Lock Status Badge */}
+                {profile.isLocked ? (
+                  <span className="flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                    <Lock size={11} />
+                    Profile Locked
                   </span>
                 ) : (
-                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                    GPS Active
+                  <span className="flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/40">
+                    <Unlock size={11} />
+                    Edit Mode
+                  </span>
+                )}
+
+                {approvedApp && (
+                  <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                    <CheckCircle2 size={11} />
+                    Approved
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-slate-400 font-medium">Manage your personal, contact, skills, and gig work information</p>
+              <p className="text-[11px] text-slate-400 font-medium">
+                {profile.isLocked 
+                  ? 'Your profile is locked against accidental changes' 
+                  : 'Editing mode — update your details and click Finish & Lock'}
+              </p>
             </div>
           </div>
-          <button 
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
-            title="Close Profile"
-          >
-            <X size={20} />
-          </button>
+
+          <div className="flex items-center gap-2">
+            {profile.isLocked ? (
+              <button
+                type="button"
+                onClick={handleUnlockProfile}
+                className="flex items-center gap-1 px-3 py-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                title="Unlock profile to edit"
+              >
+                <Unlock size={13} />
+                <span>Unlock to Edit</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleFinishEditingAndLock}
+                className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
+                title="Finish editing and lock profile"
+              >
+                <Lock size={13} />
+                <span>Lock Profile</span>
+              </button>
+            )}
+
+            <button 
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Close Profile"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
+        {/* Lock Alert / Restriction Warning */}
+        {lockAlertMessage && (
+          <div className="bg-amber-500/20 border-b border-amber-500/40 px-5 py-2.5 flex items-center justify-between animate-fadeIn text-amber-300 text-xs font-bold">
+            <div className="flex items-center gap-2">
+              <AlertCircle size={16} className="text-amber-400 shrink-0" />
+              <span>{lockAlertMessage}</span>
+            </div>
+            <button onClick={() => setLockAlertMessage('')} className="text-amber-400 hover:text-amber-200">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         {/* Success Alert Banner */}
-        {saveSuccess && (
+        {saveSuccessMessage && (
           <div className="bg-emerald-600/20 border-b border-emerald-500/40 px-5 py-2.5 flex items-center justify-between animate-fadeIn text-emerald-300 text-xs font-bold">
             <div className="flex items-center gap-2">
-              <CheckCircle2 size={16} className="text-emerald-400" />
-              <span>Profile details saved successfully & synced with map pin!</span>
+              <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+              <span>{saveSuccessMessage}</span>
             </div>
-            <button onClick={() => setSaveSuccess(false)} className="text-emerald-400 hover:text-emerald-200">
+            <button onClick={() => setSaveSuccessMessage('')} className="text-emerald-400 hover:text-emerald-200">
               <X size={14} />
             </button>
           </div>
@@ -396,18 +564,46 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
         {/* Scrollable Form Body */}
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
           
-          {/* 1. Avatar Photo (Face Only) */}
-          <div className="flex flex-col sm:flex-row items-center gap-5 p-4 bg-slate-800/40 rounded-2xl border border-slate-700/60">
-            <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-              <div className="w-24 h-24 rounded-full border-4 border-orange-500/80 overflow-hidden bg-slate-800 shadow-[0_0_20px_rgba(249,115,22,0.35)] flex items-center justify-center">
+          {/* 1. Avatar Photo (Face Only - Once a Month Restriction & Lock) */}
+          <div className={`flex flex-col sm:flex-row items-center gap-5 p-4 rounded-2xl border transition-all ${
+            profile.isLocked 
+              ? 'bg-slate-800/20 border-slate-700/40' 
+              : 'bg-slate-800/40 border-slate-700/60'
+          }`}>
+            <div 
+              className={`relative group ${
+                profile.isLocked || !isAvatarChangeAllowed ? 'cursor-not-allowed' : 'cursor-pointer'
+              }`} 
+              onClick={handleAvatarClick}
+            >
+              <div className={`w-24 h-24 rounded-full border-4 overflow-hidden bg-slate-800 shadow-[0_0_20px_rgba(249,115,22,0.35)] flex items-center justify-center transition-all ${
+                profile.isLocked || !isAvatarChangeAllowed 
+                  ? 'border-slate-600 opacity-90' 
+                  : 'border-orange-500/80 hover:border-orange-400'
+              }`}>
                 {profile.avatar ? (
                   <img src={profile.avatar} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
                   <User size={42} className="text-orange-400/80" />
                 )}
               </div>
+              
+              {/* Overlay Icon */}
               <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Camera size={24} className="text-white drop-shadow" />
+                {profile.isLocked ? (
+                  <Lock size={24} className="text-amber-400 drop-shadow" />
+                ) : !isAvatarChangeAllowed ? (
+                  <Clock size={24} className="text-amber-400 drop-shadow" />
+                ) : (
+                  <Camera size={24} className="text-white drop-shadow" />
+                )}
+              </div>
+
+              {/* Status Pip */}
+              <div className={`absolute bottom-0 right-0 p-1.5 rounded-full border-2 border-slate-900 shadow-md ${
+                profile.isLocked || !isAvatarChangeAllowed ? 'bg-amber-500 text-slate-950' : 'bg-emerald-500 text-white'
+              }`}>
+                {profile.isLocked || !isAvatarChangeAllowed ? <Lock size={12} /> : <Camera size={12} />}
               </div>
             </div>
             
@@ -419,26 +615,71 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
               onChange={handleImageUpload} 
             />
 
-            <div className="space-y-1 text-center sm:text-left flex-1">
-              <div className="flex items-center justify-center sm:justify-start gap-2">
-                <h3 className="text-sm font-black text-white">Profile Photo (Face Only)</h3>
+            <div className="space-y-1.5 text-center sm:text-left flex-1">
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                <h3 className="text-sm font-black text-white">Profile Picture / Logo</h3>
+                
+                {/* Once a Month Tag */}
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 ${
+                  isAvatarChangeAllowed 
+                    ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30' 
+                    : 'text-amber-400 bg-amber-400/10 border-amber-400/30'
+                }`}>
+                  <Clock size={11} />
+                  <span>Once a Month Policy</span>
+                </span>
+
                 <span className="text-[10px] font-bold text-orange-400 bg-orange-400/10 px-2 py-0.5 rounded-md border border-orange-400/30">
                   Live GPS Pin
                 </span>
               </div>
+
               <p className="text-xs text-slate-300">
-                Upload a clear face photo. This picture displays on your exact GPS location marker on the live map.
+                Face photo appears on your live map location pin. Users can only update their profile picture logo <strong>once a month</strong>.
               </p>
-              <button 
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer"
-              >
-                <Camera size={14} />
-                <span>{profile.avatar ? 'Change Face Photo' : 'Upload Face Photo'}</span>
-              </button>
+
+              {/* Monthly Policy Countdown or Availability */}
+              <div className="pt-1">
+                {profile.isLocked ? (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-950/80 border border-slate-700 rounded-xl text-xs text-slate-400 font-semibold">
+                    <Lock size={13} className="text-amber-400" />
+                    <span>Profile locked. Unlock to change picture.</span>
+                  </div>
+                ) : !isAvatarChangeAllowed ? (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/15 border border-amber-500/30 rounded-xl text-xs text-amber-300 font-bold">
+                    <Clock size={14} className="text-amber-400 shrink-0" />
+                    <span>Photo change available in {daysRemaining} days (on {nextEligibleDate})</span>
+                  </div>
+                ) : (
+                  <button 
+                    type="button"
+                    onClick={handleAvatarClick}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer"
+                  >
+                    <Camera size={14} />
+                    <span>{profile.avatar ? 'Change Profile Photo / Logo' : 'Upload Profile Photo / Logo'}</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
+
+          {/* Locked Notice Banner */}
+          {profile.isLocked && (
+            <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-between gap-3 text-xs text-amber-300 font-medium">
+              <div className="flex items-center gap-2">
+                <Lock size={16} className="text-amber-400 shrink-0" />
+                <span>Your profile is currently locked. Fields are in read-only mode to prevent accidental changes.</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleUnlockProfile}
+                className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl shrink-0 cursor-pointer shadow transition-all"
+              >
+                Unlock
+              </button>
+            </div>
+          )}
 
           {/* 2. Personal Identity: Name, Middle Name (Optional), Surname, Date of Birth */}
           <div className="space-y-3">
@@ -454,10 +695,15 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 </label>
                 <input
                   type="text"
+                  disabled={profile.isLocked}
                   value={profile.name}
                   onChange={(e) => setProfile(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="e.g. Sipho"
-                  className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                  className={`w-full border rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors ${
+                    profile.isLocked 
+                      ? 'bg-slate-950/60 border-slate-800 text-slate-300 cursor-not-allowed' 
+                      : 'bg-slate-950 border-slate-700 focus:border-orange-500'
+                  }`}
                 />
               </div>
 
@@ -467,10 +713,15 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 </label>
                 <input
                   type="text"
+                  disabled={profile.isLocked}
                   value={profile.middleName}
                   onChange={(e) => setProfile(prev => ({ ...prev, middleName: e.target.value }))}
                   placeholder="Optional middle name"
-                  className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                  className={`w-full border rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors ${
+                    profile.isLocked 
+                      ? 'bg-slate-950/60 border-slate-800 text-slate-300 cursor-not-allowed' 
+                      : 'bg-slate-950 border-slate-700 focus:border-orange-500'
+                  }`}
                 />
               </div>
 
@@ -480,10 +731,15 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 </label>
                 <input
                   type="text"
+                  disabled={profile.isLocked}
                   value={profile.surname}
                   onChange={(e) => setProfile(prev => ({ ...prev, surname: e.target.value }))}
                   placeholder="e.g. Khumalo"
-                  className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                  className={`w-full border rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors ${
+                    profile.isLocked 
+                      ? 'bg-slate-950/60 border-slate-800 text-slate-300 cursor-not-allowed' 
+                      : 'bg-slate-950 border-slate-700 focus:border-orange-500'
+                  }`}
                 />
               </div>
             </div>
@@ -497,10 +753,15 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 <Calendar size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-orange-400 pointer-events-none" />
                 <input
                   type="date"
+                  disabled={profile.isLocked}
                   value={profile.dateOfBirth}
                   max={new Date().toISOString().split('T')[0]}
                   onChange={(e) => setProfile(prev => ({ ...prev, dateOfBirth: e.target.value }))}
-                  className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl pl-11 pr-4 py-2.5 text-xs text-white focus:outline-none transition-colors [color-scheme:dark]"
+                  className={`w-full border rounded-xl pl-11 pr-4 py-2.5 text-xs text-white focus:outline-none transition-colors [color-scheme:dark] ${
+                    profile.isLocked 
+                      ? 'bg-slate-950/60 border-slate-800 text-slate-300 cursor-not-allowed' 
+                      : 'bg-slate-950 border-slate-700 focus:border-orange-500'
+                  }`}
                 />
               </div>
             </div>
@@ -520,10 +781,15 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 </label>
                 <input
                   type="text"
+                  disabled={profile.isLocked}
                   value={profile.address}
                   onChange={(e) => setProfile(prev => ({ ...prev, address: e.target.value }))}
                   placeholder="e.g. 14 Main Street, Apartment 4B"
-                  className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                  className={`w-full border rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors ${
+                    profile.isLocked 
+                      ? 'bg-slate-950/60 border-slate-800 text-slate-300 cursor-not-allowed' 
+                      : 'bg-slate-950 border-slate-700 focus:border-orange-500'
+                  }`}
                 />
               </div>
 
@@ -534,10 +800,15 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                   </label>
                   <input
                     type="text"
+                    disabled={profile.isLocked}
                     value={profile.location}
                     onChange={(e) => setProfile(prev => ({ ...prev, location: e.target.value }))}
                     placeholder="e.g. Sandton, Johannesburg"
-                    className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                    className={`w-full border rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors ${
+                      profile.isLocked 
+                        ? 'bg-slate-950/60 border-slate-800 text-slate-300 cursor-not-allowed' 
+                        : 'bg-slate-950 border-slate-700 focus:border-orange-500'
+                    }`}
                   />
                 </div>
 
@@ -547,9 +818,14 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                   </label>
                   <div className="relative">
                     <select
+                      disabled={profile.isLocked}
                       value={profile.province}
                       onChange={(e) => setProfile(prev => ({ ...prev, province: e.target.value }))}
-                      className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none transition-colors appearance-none pr-9 cursor-pointer"
+                      className={`w-full border rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none transition-colors appearance-none pr-9 ${
+                        profile.isLocked 
+                          ? 'bg-slate-950/60 border-slate-800 text-slate-300 cursor-not-allowed' 
+                          : 'bg-slate-950 border-slate-700 focus:border-orange-500 cursor-pointer'
+                      }`}
                     >
                       {SA_PROVINCES.map((prov) => (
                         <option key={prov} value={prov} className="bg-slate-900 text-white">
@@ -580,10 +856,15 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                   <Phone size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-orange-400 pointer-events-none" />
                   <input
                     type="tel"
+                    disabled={profile.isLocked}
                     value={profile.contactNumber}
                     onChange={(e) => setProfile(prev => ({ ...prev, contactNumber: e.target.value }))}
                     placeholder="e.g. +27 82 123 4567"
-                    className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl pl-11 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                    className={`w-full border rounded-xl pl-11 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors ${
+                      profile.isLocked 
+                        ? 'bg-slate-950/60 border-slate-800 text-slate-300 cursor-not-allowed' 
+                        : 'bg-slate-950 border-slate-700 focus:border-orange-500'
+                    }`}
                   />
                 </div>
               </div>
@@ -596,10 +877,15 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                   <Mail size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-orange-400 pointer-events-none" />
                   <input
                     type="email"
+                    disabled={profile.isLocked}
                     value={profile.email}
                     onChange={(e) => setProfile(prev => ({ ...prev, email: e.target.value }))}
                     placeholder="e.g. name@example.com"
-                    className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl pl-11 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                    className={`w-full border rounded-xl pl-11 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors ${
+                      profile.isLocked 
+                        ? 'bg-slate-950/60 border-slate-800 text-slate-300 cursor-not-allowed' 
+                        : 'bg-slate-950 border-slate-700 focus:border-orange-500'
+                    }`}
                   />
                 </div>
               </div>
@@ -613,28 +899,32 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 <Share2 size={16} className="text-orange-400" />
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">Social Media Links</h3>
               </div>
-              <button
-                type="button"
-                onClick={handleAddSocialLink}
-                className="flex items-center gap-1 px-2.5 py-1 bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 border border-orange-500/40 rounded-lg text-xs font-bold transition-all cursor-pointer"
-              >
-                <Plus size={13} />
-                <span>Add Social Link</span>
-              </button>
+              {!profile.isLocked && (
+                <button
+                  type="button"
+                  onClick={handleAddSocialLink}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 border border-orange-500/40 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                >
+                  <Plus size={13} />
+                  <span>Add Social Link</span>
+                </button>
+              )}
             </div>
 
             {profile.socialLinks.length === 0 ? (
               <div className="p-4 bg-slate-950/60 border border-dashed border-slate-800 rounded-2xl text-center space-y-2">
                 <Globe size={24} className="mx-auto text-slate-600" />
                 <p className="text-xs text-slate-400">No social media links added yet.</p>
-                <button
-                  type="button"
-                  onClick={handleAddSocialLink}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
-                >
-                  <Plus size={14} className="text-orange-400" />
-                  <span>Add First Link (LinkedIn, X, Instagram, etc.)</span>
-                </button>
+                {!profile.isLocked && (
+                  <button
+                    type="button"
+                    onClick={handleAddSocialLink}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                  >
+                    <Plus size={14} className="text-orange-400" />
+                    <span>Add First Link (LinkedIn, X, Instagram, etc.)</span>
+                  </button>
+                )}
               </div>
             ) : (
               <div className="space-y-2">
@@ -645,9 +935,12 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                   >
                     <div className="sm:w-44 shrink-0">
                       <select
+                        disabled={profile.isLocked}
                         value={link.platform}
                         onChange={(e) => handleUpdateSocialLink(link.id, 'platform', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-orange-400 font-bold focus:outline-none focus:border-orange-500"
+                        className={`w-full border rounded-lg px-2.5 py-1.5 text-xs text-orange-400 font-bold focus:outline-none ${
+                          profile.isLocked ? 'bg-slate-950/60 border-slate-800 cursor-not-allowed' : 'bg-slate-900 border-slate-700 focus:border-orange-500'
+                        }`}
                       >
                         {SOCIAL_PLATFORMS.map((plat) => (
                           <option key={plat} value={plat}>
@@ -660,21 +953,26 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                     <div className="flex-1 relative">
                       <input
                         type="text"
+                        disabled={profile.isLocked}
                         value={link.url}
                         onChange={(e) => handleUpdateSocialLink(link.id, 'url', e.target.value)}
                         placeholder={`Enter ${link.platform} link or username...`}
-                        className="w-full bg-slate-900 border border-slate-700 focus:border-orange-500 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
+                        className={`w-full border rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none ${
+                          profile.isLocked ? 'bg-slate-950/60 border-slate-800 text-slate-400 cursor-not-allowed' : 'bg-slate-900 border-slate-700 focus:border-orange-500'
+                        }`}
                       />
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveSocialLink(link.id)}
-                      className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer self-end sm:self-center"
-                      title="Remove Link"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    {!profile.isLocked && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSocialLink(link.id)}
+                        className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer self-end sm:self-center"
+                        title="Remove Link"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -689,31 +987,33 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             </div>
 
             {/* Input to type custom skill */}
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={skillInput}
-                onChange={(e) => setSkillInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddSkill();
-                  }
-                }}
-                placeholder="Type a skill (e.g. Residential Wiring, Graphic Design) and press Enter..."
-                className="flex-1 bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
-              />
-              <button
-                type="button"
-                onClick={() => handleAddSkill()}
-                className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-md"
-              >
-                Add Skill
-              </button>
-            </div>
+            {!profile.isLocked && (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={skillInput}
+                  onChange={(e) => setSkillInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddSkill();
+                    }
+                  }}
+                  placeholder="Type a skill (e.g. Residential Wiring, Graphic Design) and press Enter..."
+                  className="flex-1 bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleAddSkill()}
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-md"
+                >
+                  Add Skill
+                </button>
+              </div>
+            )}
 
             {/* Active Skills Badges */}
-            {profile.skills.length > 0 && (
+            {profile.skills.length > 0 ? (
               <div className="flex flex-wrap gap-1.5 p-3 bg-slate-950/70 border border-slate-800 rounded-2xl">
                 {profile.skills.map((skill) => (
                   <span
@@ -721,45 +1021,51 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                     className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-500/20 text-orange-300 border border-orange-500/30 rounded-xl text-xs font-bold"
                   >
                     <span>{skill}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveSkill(skill)}
-                      className="hover:text-red-400 p-0.5 rounded-full transition-colors cursor-pointer"
-                      title="Remove skill"
-                    >
-                      <X size={12} />
-                    </button>
+                    {!profile.isLocked && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSkill(skill)}
+                        className="hover:text-red-400 p-0.5 rounded-full transition-colors cursor-pointer"
+                        title="Remove skill"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
                   </span>
                 ))}
               </div>
+            ) : (
+              <div className="text-xs text-slate-500 italic p-2">No skills added yet.</div>
             )}
 
-            {/* Quick suggested skills chips */}
-            <div>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">
-                Popular suggestions (click to add):
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {POPULAR_SKILLS.map((item) => {
-                  const alreadyAdded = profile.skills.includes(item);
-                  return (
-                    <button
-                      key={item}
-                      type="button"
-                      disabled={alreadyAdded}
-                      onClick={() => handleAddSkill(item)}
-                      className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
-                        alreadyAdded
-                          ? 'bg-slate-800/60 text-slate-500 border-slate-800 cursor-not-allowed'
-                          : 'bg-slate-900 text-slate-300 hover:text-white border-slate-800 hover:border-orange-500/50 hover:bg-slate-800'
-                      }`}
-                    >
-                      + {item}
-                    </button>
-                  );
-                })}
+            {/* Quick suggested skills chips (Only in edit mode) */}
+            {!profile.isLocked && (
+              <div>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                  Popular suggestions (click to add):
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {POPULAR_SKILLS.map((item) => {
+                    const alreadyAdded = profile.skills.includes(item);
+                    return (
+                      <button
+                        key={item}
+                        type="button"
+                        disabled={alreadyAdded}
+                        onClick={() => handleAddSkill(item)}
+                        className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                          alreadyAdded
+                            ? 'bg-slate-800/60 text-slate-500 border-slate-800 cursor-not-allowed'
+                            : 'bg-slate-900 text-slate-300 hover:text-white border-slate-800 hover:border-orange-500/50 hover:bg-slate-800'
+                        }`}
+                      >
+                        + {item}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* 7. Looking for what type of work on the app */}
@@ -783,8 +1089,11 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                     <button
                       key={pref}
                       type="button"
+                      disabled={profile.isLocked}
                       onClick={() => handleToggleWorkType(pref)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        profile.isLocked ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'
+                      } ${
                         isSelected
                           ? 'bg-orange-600 text-white shadow-md'
                           : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
@@ -805,10 +1114,15 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
               </label>
               <textarea
                 rows={3}
+                disabled={profile.isLocked}
                 value={profile.workLookingFor}
                 onChange={(e) => setProfile(prev => ({ ...prev, workLookingFor: e.target.value }))}
                 placeholder="e.g. Seeking urgent electrical call-outs, solar maintenance projects, or certified domestic wiring jobs around Sandton and Johannesburg North..."
-                className="w-full bg-slate-950 border border-slate-700 focus:border-orange-500 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors resize-none"
+                className={`w-full border rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors resize-none ${
+                  profile.isLocked 
+                    ? 'bg-slate-950/60 border-slate-800 text-slate-300 cursor-not-allowed' 
+                    : 'bg-slate-950 border-slate-700 focus:border-orange-500'
+                }`}
               />
             </div>
           </div>
@@ -842,7 +1156,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
         </div>
 
         {/* Footer Actions */}
-        <div className="px-5 sm:px-6 py-3.5 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
+        <div className="px-5 sm:px-6 py-3.5 bg-slate-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <button
             type="button"
             onClick={onClose}
@@ -851,14 +1165,37 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             Close
           </button>
 
-          <button
-            type="button"
-            onClick={handleSave}
-            className="flex-1 sm:flex-none sm:min-w-[180px] py-2.5 px-6 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white rounded-xl font-black text-xs shadow-[0_4px_16px_rgba(249,115,22,0.4)] hover:brightness-110 active:scale-98 transition-all cursor-pointer flex items-center justify-center gap-1.5"
-          >
-            <Check size={16} />
-            <span>Save Profile Changes</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {profile.isLocked ? (
+              <button
+                type="button"
+                onClick={handleUnlockProfile}
+                className="py-2.5 px-5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Unlock size={15} />
+                <span>Unlock to Edit Profile</span>
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={handleSaveOnly}
+                  className="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl font-bold text-xs border border-slate-700 transition-all cursor-pointer"
+                >
+                  Save Draft
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleFinishEditingAndLock}
+                  className="py-2.5 px-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-black text-xs shadow-[0_4px_16px_rgba(16,185,129,0.35)] hover:brightness-110 active:scale-98 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Lock size={15} />
+                  <span>Finish Editing & Lock</span>
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
       </div>
